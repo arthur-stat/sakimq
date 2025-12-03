@@ -10,7 +10,9 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>broker</module>
         <module>clients</module>
+        <module>common</module>
     </modules>
 
     <properties>
