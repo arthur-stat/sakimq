@@ -1,103 +1,95 @@
 package com.arth.sakimq.common.message;
 
-public class DisruptorMessageQueue {
+import com.lmax.disruptor.*;
+import com.lmax.disruptor.dsl.Disruptor;
+import com.lmax.disruptor.dsl.ProducerType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+public class DisruptorMessageQueue implements MessageQueue {
+
+    private static final Logger log = LoggerFactory.getLogger(DisruptorMessageQueue.class);
     private final RingBuffer<ReusableMessageEvent> ringBuffer;
-    private final SequenceBarrier barrier;
-    private final Sequence consumedSequence = new Sequence(-1); // 消费到哪了
-    private final AtomicLong committedOffset = new AtomicLong(-1); // 已提交 offset
-    private final ExecutorService consumerExecutor;
-    private final MessageHandler messageHandler; // 回调给上层消费逻辑
+    private final Disruptor<ReusableMessageEvent> disruptor;
 
-    // 内部缓存：已处理但未提交的消息（用于 pull）
-    private final Map<Long, ReusableMessageEvent> processedMessages = new ConcurrentHashMap<>();
+    public DisruptorMessageQueue(int bufferSize, int consumerGroupSize, MessageHandler handler) {
 
-    public PartitionQueue(int bufferSize, MessageHandler handler) {
-        this.messageHandler = handler;
-        Disruptor<ReusableMessageEvent> disruptor = new Disruptor<>(
+        this.disruptor = new Disruptor<>(
                 ReusableMessageEvent.FACTORY,
                 bufferSize,
                 Executors.defaultThreadFactory(),
-                ProducerType.SINGLE, // 根据场景选 SINGLE/MULTI
-                new BlockingWaitStrategy() // 可换为 Sleeping/LowLatency
+                ProducerType.MULTI,
+                new TimeoutBlockingWaitStrategy(5, TimeUnit.MINUTES)
         );
 
-        // 消费者：处理消息并缓存
-        disruptor.handleEventsWith((event, sequence, endOfBatch) -> {
+        /* WorkHandler API: Competitive Consumption */
+        WorkHandler<ReusableMessageEvent>[] workers = new WorkHandler[consumerGroupSize];
+
+        Arrays.fill(workers, (WorkHandler<ReusableMessageEvent>) event -> {
             try {
-                messageHandler.onMessage(event); // 上层处理逻辑
-                processedMessages.put(sequence, event); // 标记为已处理
-                consumedSequence.set(sequence);
+                /* PUSH mode */
+                handler.onMessage(event);
             } catch (Exception e) {
-                // TODO: 死信队列 or 重试
-                consumedSequence.set(sequence); // 跳过？谨慎！
+                log.error("Error processing message", e);
+                // TODO: retry or dead-letter
             }
         });
 
+        /* Thanks to Disruptor 3.4.4, this single line of code implements the push mode
+        of the message queue, saving me a tremendous amount of work. */
+        disruptor.handleEventsWithWorkerPool(workers);
         this.ringBuffer = disruptor.start();
-        this.barrier = ringBuffer.newBarrier();
-        this.consumerExecutor = Executors.newSingleThreadExecutor();
     }
 
-    // ====== 入队======
+    /**
+     * append (push)
+     */
     @Override
-    public boolean append(Message msg) {
+    public boolean append(Message message) {
         try {
-            long seq = ringBuffer.tryNext(); // 非阻塞
-            ringBuffer.get(seq).reset(
-                    msg.getMessageId(),
-                    msg.getTopic(),
-                    0, // queueId
-                    msg.getBody(),
-                    msg.getTimestamp()
-            );
-            ringBuffer.publish(seq);
+            long seq = ringBuffer.tryNext();
+            try {
+                ReusableMessageEvent event = ringBuffer.get(seq);
+                event.reset(
+                        message.getMessageId(),
+                        message.getTopic(),
+                        0,
+                        message.getBody(),
+                        message.getTimestamp()
+                );
+            } finally {
+                ringBuffer.publish(seq);
+            }
             return true;
+
         } catch (InsufficientCapacityException e) {
-            return false; // 队列满，触发背压
+            log.warn("Disruptor queue full");
+            return false;
         }
     }
 
-    // ====== 拉取======
+    /**
+     * blocking append (push)
+     */
     @Override
-    public FetchResult pull(long startOffset, int maxMessages) {
-        List<MessageView> messages = new ArrayList<>();
-        long nextOffset = startOffset;
-
-        for (int i = 0; i < maxMessages; i++) {
-            if (nextOffset > consumedSequence.get()) break; // 还没处理完
-
-            ReusableMessageEvent event = processedMessages.get(nextOffset);
-            if (event == null) continue; // 可能被清理
-
-            messages.add(new MessageView(event, nextOffset));
-            nextOffset++;
+    public void appendBlocking(Message message) {
+        long seq = ringBuffer.next();
+        try {
+            ReusableMessageEvent event = ringBuffer.get(seq);
+            event.reset(
+                    message.getMessageId(),
+                    message.getTopic(),
+                    0,
+                    message.getBody(),
+                    message.getTimestamp()
+            );
+        } finally {
+            ringBuffer.publish(seq);
         }
-
-        // TODO: 定期清理 processedMessages（如 <= committedOffset 的条目）
-
-        return new FetchResult(messages, nextOffset, nextOffset <= getMaxOffset());
-    }
-
-    // ====== 提交消费位点（FIFO 保证）======
-    @Override
-    public void commitOffset(long offset) {
-        if (offset > committedOffset.get() && offset <= consumedSequence.get()) {
-            committedOffset.set(offset);
-            // 清理已提交的消息（节省内存）
-            processedMessages.entrySet().removeIf(e -> e.getKey() <= offset);
-        }
-    }
-
-    // ====== 状态查询 ======
-    @Override
-    public long getMaxOffset() {
-        return ringBuffer.getCursor(); // 最新写入位置
-    }
-
-    @Override
-    public long getCommittedOffset() {
-        return committedOffset.get();
     }
 
     @Override
@@ -105,10 +97,8 @@ public class DisruptorMessageQueue {
         return ringBuffer.remainingCapacity() == 0;
     }
 
-    // ====== 生命周期 ======
     @Override
     public void close() {
-        // Disruptor shutdown logic
+        disruptor.shutdown();
     }
-}
 }
