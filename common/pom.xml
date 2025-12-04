@@ -12,11 +12,11 @@
 
     <artifactId>common</artifactId>
 
-    <!-- Disruptor 4.0 removed the implementation of WorkHandler,
-    which had been instrumental in easily implementing Consumer Groups.
-    Therefore, we are considering the legacy version released in 2021
-    instead of the latest version launched in 2023. -->
     <dependencies>
+        <!-- Disruptor 4.0 removed the implementation of WorkHandler,
+        which had been instrumental in easily implementing Consumer Groups.
+        Therefore, we are considering the legacy version released in 2021
+        instead of the latest version launched in 2023. -->
         <dependency>
             <groupId>com.lmax</groupId>
             <artifactId>disruptor</artifactId>
