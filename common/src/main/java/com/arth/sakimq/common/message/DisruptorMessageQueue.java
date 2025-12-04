@@ -1,5 +1,6 @@
 package com.arth.sakimq.common.message;
 
+import com.arth.sakimq.common.constant.LoggerName;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -12,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 
 public class DisruptorMessageQueue implements MessageQueue {
 
-    private static final Logger log = LoggerFactory.getLogger(DisruptorMessageQueue.class);
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.MESSAGE);
     private final RingBuffer<ReusableMessageEvent> ringBuffer;
     private final Disruptor<ReusableMessageEvent> disruptor;
 
