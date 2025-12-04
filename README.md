@@ -14,9 +14,9 @@ Here are some scattered features in the process of design and implementation.
 - The explicit queue leverages Disruptor with its zero-copy capability, a design approach more akin to that of RocketMQ.
 - Push model supported (based on Disruptor 3.4.4) (similar to RabbitMQ).
 - Support various exchange strategies (inspired by RabbitMQ).
-- Combining Netty's I/O multiplexing with the virtual threads provided by JDK21, it achieves high-performance concurrency with a concise synchronous coding style.
+- The integration of Netty's I/O multiplexing and JDK21's virtual threads enables high-performance concurrency with a concise synchronous coding style.
+- Components communicate efficiently via Protobuf.
 
 # TO DO
 
-- Pull model optional. 
-- Communication by ProtoBuf.
+- Pull model optional.

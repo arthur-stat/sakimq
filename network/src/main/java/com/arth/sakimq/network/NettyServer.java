@@ -1,16 +1,19 @@
 package com.arth.sakimq.network;
 
+// import com.google.protobuf.ByteString;
+import com.arth.sakimq.protocol.MessageProto;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.codec.protobuf.ProtobufDecoder;
+import io.netty.handler.codec.protobuf.ProtobufEncoder;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
-import io.netty.util.CharsetUtil;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 /**
@@ -47,28 +50,25 @@ public class NettyServer {
                         protected void initChannel(SocketChannel ch) throws Exception {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 添加编解码器
-                            pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
-                            pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
+                            /* ProtoBuf decoder & encoder */
+                            pipeline.addLast(new LengthFieldBasedFrameDecoder(1024 * 1024, 0, 4, 0, 4));
+                            pipeline.addLast("decoder", new ProtobufDecoder(MessageProto.getDefaultInstance()));
+                            pipeline.addLast(new LengthFieldPrepender(4));
+                            pipeline.addLast("encoder", new ProtobufEncoder());
 
                             // 添加业务处理器
-                            pipeline.addLast("serverHandler", new SimpleChannelInboundHandler<String>() {
+                            pipeline.addLast("serverHandler", new SimpleChannelInboundHandler<MessageProto>() {
                                 @Override
                                 public void channelActive(ChannelHandlerContext ctx) throws Exception {
                                     System.out.println("Client connected: " + ctx.channel().remoteAddress());
                                 }
 
                                 @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    System.out.println("Client disconnected: " + ctx.channel().remoteAddress());
-                                }
-
-                                @Override
-                                protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+                                protected void channelRead0(ChannelHandlerContext ctx, MessageProto msg) throws Exception {
                                     System.out.println("Received from client: " + msg);
 
-                                    // 简单回显作为响应示例
-                                    ctx.writeAndFlush("Server response to: " + msg);
+                                    // Echo the message back to client
+                                    ctx.writeAndFlush(msg);
                                 }
 
                                 @Override
@@ -80,10 +80,11 @@ public class NettyServer {
                         }
                     });
 
-            serverChannel = bootstrap.bind(port).sync().channel();
+            ChannelFuture future = bootstrap.bind(port).sync();
+            serverChannel = future.channel();
             System.out.println("Server started on port " + port);
 
-            // 等待服务器通道关闭
+            // 等待通道关闭
             serverChannel.closeFuture().sync();
         } finally {
             bossGroup.shutdownGracefully();
@@ -92,8 +93,14 @@ public class NettyServer {
     }
 
     public void stop() {
-        if (serverChannel != null) serverChannel.close();
-        if (bossGroup != null) bossGroup.shutdownGracefully();
-        if (workerGroup != null) workerGroup.shutdownGracefully();
+        if (serverChannel != null) {
+            serverChannel.close();
+        }
+        if (bossGroup != null) {
+            bossGroup.shutdownGracefully();
+        }
+        if (workerGroup != null) {
+            workerGroup.shutdownGracefully();
+        }
     }
 }

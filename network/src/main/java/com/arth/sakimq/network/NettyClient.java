@@ -1,13 +1,16 @@
 package com.arth.sakimq.network;
 
+// import com.google.protobuf.ByteString;
+import com.arth.sakimq.protocol.MessageProto;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
-import io.netty.util.CharsetUtil;
+import io.netty.handler.codec.protobuf.ProtobufDecoder;
+import io.netty.handler.codec.protobuf.ProtobufEncoder;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.LengthFieldPrepender;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -44,12 +47,14 @@ public class NettyClient {
                         protected void initChannel(SocketChannel ch) throws Exception {
                             ChannelPipeline pipeline = ch.pipeline();
 
-                            // 添加编解码器
-                            pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
-                            pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
+                            /* ProtoBuf decoder & encoder */
+                            pipeline.addLast(new LengthFieldBasedFrameDecoder(1024 * 1024, 0, 4, 0, 4));
+                            pipeline.addLast("decoder", new ProtobufDecoder(MessageProto.getDefaultInstance()));
+                            pipeline.addLast(new LengthFieldPrepender(4));
+                            pipeline.addLast("encoder", new ProtobufEncoder());
 
                             // 添加业务处理器
-                            pipeline.addLast("clientHandler", new SimpleChannelInboundHandler<String>() {
+                            pipeline.addLast("clientHandler", new SimpleChannelInboundHandler<MessageProto>() {
                                 @Override
                                 public void channelActive(ChannelHandlerContext ctx) throws Exception {
                                     System.out.println("Connected to server: " + ctx.channel().remoteAddress());
@@ -64,7 +69,7 @@ public class NettyClient {
                                 }
 
                                 @Override
-                                protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+                                protected void channelRead0(ChannelHandlerContext ctx, MessageProto msg) throws Exception {
                                     System.out.println("Received from server: " + msg);
                                 }
 
@@ -88,9 +93,15 @@ public class NettyClient {
     }
 
     public void sendMessage(String message) {
-        if (clientChannel != null && clientChannel.isActive()) {
-            clientChannel.writeAndFlush(message);
-        }
+//        if (clientChannel != null && clientChannel.isActive()) {
+//            // 创建一个示例消息
+//            MessageProto msg = MessageProto.newBuilder()
+//                    .setMessageId(System.currentTimeMillis())
+//                    .setBody(ByteString.copyFromUtf8(message))
+//                    .setTimestamp(System.currentTimeMillis())
+//                    .build();
+//            clientChannel.writeAndFlush(msg);
+//        }
     }
 
     public CompletableFuture<Void> getConnectionFuture() {
