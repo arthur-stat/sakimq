@@ -1,0 +1,13 @@
+package com.arth.sakimq.network;
+
+public class ServerExample {
+    public static void main(String[] args) {
+        NettyServer server = new NettyServer(8080);
+        try {
+            server.start();
+        } catch (InterruptedException e) {
+            System.err.println("Server was interrupted");
+            e.printStackTrace();
+        }
+    }
+}
