@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+import "message.proto";
+
+option java_multiple_files = true;
+option java_package = "com.arth.sakimq.protocol";
+option java_outer_classname = "SakiMQTransProto";
+
+// Transport message definition
+message TransportProto {
+  MessageType type = 1;
+  int32 delivery_tag = 2;
+  int64 timestamp = 3;
+  oneof payload {
+    MessageProto message = 4;    // for MessageTye = MESSAGE
+    AckProto ack = 5;            // for MessageTye = ACK
+    ConnectProto connect = 6;    // for MessageTye = CONNECT
+  }
+}
+
+// Enumeration of transport message types
+enum MessageType {
+  MESSAGE = 0;   // i.e., the actual messages of SakiMQ, which should be distinguished from transport messages
+  ACK = 1;
+  HEARTBEAT = 2;
+  CONNECT = 3;
+  DISCONNECT = 4;
+}
+
+// Data structure for ACK messages
+message AckProto {
+  int32 ack_message_id = 1;
+  bool success = 2;
+  string error_message = 3;
+}
+
+// Data structure for CONNECT messages
+message ConnectProto {
+  string client_id = 1;
+  string username = 2;
+  string password = 3;
+}
