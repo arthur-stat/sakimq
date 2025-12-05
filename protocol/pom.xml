@@ -10,7 +10,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>protocol</artifactId>
+    <artifactId>sakimq-protocol</artifactId>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -23,9 +23,9 @@
 
     </dependencies>
 
-    <!-- This configuration automatically generates Java source code
-    from Protocol Buffer definitions, including gRPC service classes,
-    using platform-specific protoc executables. -->
+    <!-- This configuration automatically generates Java source code from
+    Protocol Buffer definitions when executing "mvn clean install", including
+    gRPC service classes, using platform-specific protoc executables. -->
     <build>
         <extensions>
             <extension>

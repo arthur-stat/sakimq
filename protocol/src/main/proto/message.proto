@@ -2,13 +2,9 @@ syntax = "proto3";
 
 option java_multiple_files = true;
 option java_package = "com.arth.sakimq.protocol";
-option java_outer_classname = "SakiMQProto";
+option java_outer_classname = "SakiMQMsgProto";
 
-message TopicProto {
-  string name = 1;
-  string description = 2;
-}
-
+// MQ message (internal messages of SakiMQ)
 message MessageProto {
   int64 message_id = 1;
   TopicProto topic = 2;
@@ -16,4 +12,10 @@ message MessageProto {
   bytes body = 4;
   int64 timestamp = 5;
   int32 retry_count = 6;
+}
+
+// MQ topic (messages topic of SakiMQ)
+message TopicProto {
+  string name = 1;
+  string description = 2;
 }

@@ -10,7 +10,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>common</artifactId>
+    <artifactId>sakimq-common</artifactId>
 
     <dependencies>
         <!-- Disruptor 4.0 removed the implementation of WorkHandler,

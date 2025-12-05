@@ -8,8 +8,6 @@ SakiMQ is a lightweight message queue system implemented in Java.
 
 # Implemented Features
 
-Here are some scattered features in the process of design and implementation.
-
 - Publish-Subscribe Model & Observer Pattern & Push Mode.
 - The explicit queue leverages Disruptor with its zero-copy capability, a design approach more akin to that of RocketMQ.
 - Push model supported (based on Disruptor 3.4.4) (similar to RabbitMQ).
