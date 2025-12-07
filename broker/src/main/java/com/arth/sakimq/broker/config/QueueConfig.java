@@ -1,4 +1,4 @@
-package com.arth.sakimq.common.config;
+package com.arth.sakimq.broker.config;
 
 public class QueueConfig {
 
