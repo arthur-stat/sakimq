@@ -1,6 +1,6 @@
-package com.arth.sakimq.common.queue;
+package com.arth.sakimq.broker.queue;
 
-import com.arth.sakimq.common.config.QueueConfig;
+import com.arth.sakimq.broker.config.QueueConfig;
 
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;

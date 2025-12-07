@@ -12,9 +12,9 @@ message TransportMessage {
   int32 delivery_tag = 2;
   int64 timestamp = 3;
   oneof payload {
-    Message message = 4;         // for MessageTye = MESSAGE
-    AckProto ack = 5;            // for MessageTye = ACK
-    ConnectProto connect = 6;    // for MessageTye = CONNECT
+    MessagePack message_pack = 4;   // for MessageTye = MESSAGE
+    AckProto ack = 5;               // for MessageTye = ACK
+    ConnectProto connect = 6;       // for MessageTye = CONNECT
   }
 }
 
@@ -27,15 +27,21 @@ enum MessageType {
   DISCONNECT = 4;
 }
 
+// Message Pack
+message MessagePack {
+  repeated string topics = 1;
+  Message message = 2;
+}
+
 // Data structure for ACK messages
-message AckProto {
+message AckPayload {
   int32 ack_message_id = 1;
   bool success = 2;
   string error_message = 3;
 }
 
 // Data structure for CONNECT messages
-message ConnectProto {
+message ConnectPayload {
   string client_id = 1;
   string username = 2;
   string password = 3;

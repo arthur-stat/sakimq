@@ -1,12 +1,10 @@
-package com.arth.sakimq.common.queue;
+package com.arth.sakimq.broker.queue;
 
-import com.arth.sakimq.common.message.Message;
-import com.arth.sakimq.common.topic.Topic;
+import com.arth.sakimq.protocol.Message;
+import com.google.protobuf.ByteString;
 import com.lmax.disruptor.EventFactory;
 
 import java.io.Serializable;
-import java.util.Arrays;
-import java.util.Map;
 
 /**
  * Reusable message event for Disruptor
@@ -30,11 +28,7 @@ public class ReusableMessageEvent implements Serializable {
         return message.getMessageId();
     }
 
-    public String getTopic() {
-        return message.getTopic();
-    }
-
-    public byte[] getBody() {
+    public ByteString getBody() {
         return message.getBody();
     }
 

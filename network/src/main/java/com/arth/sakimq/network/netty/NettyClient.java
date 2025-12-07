@@ -4,6 +4,8 @@ import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.config.NettyClientConfig;
 import com.arth.sakimq.network.handler.TransportHandler;
+import com.arth.sakimq.protocol.ConnectProto;
+import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
@@ -28,15 +30,17 @@ public class NettyClient implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(LoggerName.NETTY_CLIENT);
     private final String host;
     private final int port;
+    private final String clientName;
     private final TransportHandler handler;
     private Channel clientChannel;
     private EventLoopGroup workerGroup;
     private CompletableFuture<Void> connectionFuture = new CompletableFuture<>();
     private final ConcurrentMap<Integer, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
 
-    public NettyClient(String host, int port, TransportHandler handler) {
+    public NettyClient(String host, int port, String clientName, TransportHandler handler) {
         this.host = host;
         this.port = port;
+        this.clientName = clientName;
         this.handler = handler;
     }
 
@@ -87,6 +91,16 @@ public class NettyClient implements AutoCloseable {
                             public void channelActive(ChannelHandlerContext ctx) {
                                 log.info("Connected to server: {}", ctx.channel().remoteAddress());
                                 clientChannel = ctx.channel();
+
+                                // Send the CONNECT message after the TCP connection is successfully established
+                                ctx.writeAndFlush(TransportMessage.newBuilder()
+                                        .setType(MessageType.CONNECT)
+                                        .setTimestamp(System.currentTimeMillis())
+                                        .setConnect(ConnectProto.newBuilder()
+                                                .setClientId("client-" + clientName)
+                                                .build())
+                                        .build());
+
                                 connectionFuture.complete(null);
                             }
 

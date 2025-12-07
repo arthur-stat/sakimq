@@ -6,7 +6,7 @@ import com.arth.sakimq.protocol.TransportMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ProducerTransportHandler implements TransportHandler {
+public class DefaultProducerTransportHandler implements TransportHandler {
 
     private static final Logger log = LoggerFactory.getLogger(LoggerName.PRODUCER);
 
@@ -27,7 +27,7 @@ public class ProducerTransportHandler implements TransportHandler {
 
     @Override
     public void onConnect(TransportMessage msg) {
-
+        log.info("Connection established with server");
     }
 
     @Override
