@@ -4,7 +4,7 @@ import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.config.NettyClientConfig;
 import com.arth.sakimq.network.handler.TransportHandler;
-import com.arth.sakimq.protocol.TransportProto;
+import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioIoHandler;
@@ -59,12 +59,12 @@ public class NettyClient implements AutoCloseable {
                         pipeline.addLast("protoEncoder", new ProtobufEncoder());
 
                         pipeline.addLast("lenDecoder", new LengthFieldBasedFrameDecoder(1024 * 1024, 0, 4, 0, 4));
-                        pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportProto.getDefaultInstance()));
+                        pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportMessage.getDefaultInstance()));
 
-                        pipeline.addLast("clientHandler", new SimpleChannelInboundHandler<TransportProto>() {
+                        pipeline.addLast("clientHandler", new SimpleChannelInboundHandler<TransportMessage>() {
 
                             @Override
-                            protected void channelRead0(ChannelHandlerContext ctx, TransportProto msg) {
+                            protected void channelRead0(ChannelHandlerContext ctx, TransportMessage msg) {
                                 try {
                                     switch (msg.getType()) {
                                         case MESSAGE -> handler.onMessage(msg);
@@ -120,11 +120,11 @@ public class NettyClient implements AutoCloseable {
         return connectionFuture;
     }
 
-    public CompletableFuture<Void> send(TransportProto msg) {
+    public CompletableFuture<Void> send(TransportMessage msg) {
         return attemptSend(msg, NettyClientConfig.maxRetries);
     }
 
-    private CompletableFuture<Void> attemptSend(TransportProto msg, int remainingAttempts) {
+    private CompletableFuture<Void> attemptSend(TransportMessage msg, int remainingAttempts) {
         if (clientChannel == null || !clientChannel.isActive()) {
             CompletableFuture<Void> failed = new CompletableFuture<>();
             failed.completeExceptionally(new UnavailableChannelException("Not connected"));

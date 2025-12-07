@@ -3,7 +3,7 @@ package com.arth.sakimq.network.netty;
 import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.network.config.NettyClientConfig;
 import com.arth.sakimq.network.handler.TransportHandler;
-import com.arth.sakimq.protocol.TransportProto;
+import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.group.ChannelGroup;
@@ -65,15 +65,15 @@ public class NettyServer implements AutoCloseable {
                         ChannelPipeline pipeline = ch.pipeline();
 
                         pipeline.addLast("lenDecoder", new LengthFieldBasedFrameDecoder(1024 * 1024, 0, 4, 0, 4));
-                        pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportProto.getDefaultInstance()));
+                        pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportMessage.getDefaultInstance()));
 
                         pipeline.addLast("lenEncoder", new LengthFieldPrepender(4));
                         pipeline.addLast("protoEncoder", new ProtobufEncoder());
 
-                        pipeline.addLast("serverHandler", new SimpleChannelInboundHandler<TransportProto>() {
+                        pipeline.addLast("serverHandler", new SimpleChannelInboundHandler<TransportMessage>() {
 
                             @Override
-                            protected void channelRead0(ChannelHandlerContext ctx, TransportProto msg) throws Exception {
+                            protected void channelRead0(ChannelHandlerContext ctx, TransportMessage msg) throws Exception {
                                 try {
                                     switch (msg.getType()) {
                                         case ACK -> {
@@ -130,11 +130,11 @@ public class NettyServer implements AutoCloseable {
         return startFuture;
     }
 
-    public CompletableFuture<Void> send(Channel channel, TransportProto msg) {
+    public CompletableFuture<Void> send(Channel channel, TransportMessage msg) {
         return attemptSend(channel, msg, NettyClientConfig.maxRetries);
     }
 
-    private CompletableFuture<Void> attemptSend(Channel channel, TransportProto msg, int remainingAttempts) {
+    private CompletableFuture<Void> attemptSend(Channel channel, TransportMessage msg, int remainingAttempts) {
         if (channel == null || !channel.isActive()) {
             CompletableFuture<Void> failed = new CompletableFuture<>();
             failed.completeExceptionally(new RuntimeException("Target channel not active"));
@@ -172,7 +172,7 @@ public class NettyServer implements AutoCloseable {
         }).thenCompose(Function.identity());
     }
 
-    public CompletableFuture<Void> broadcast(TransportProto msg) {
+    public CompletableFuture<Void> broadcast(TransportMessage msg) {
         CompletableFuture<Void> all = CompletableFuture.completedFuture(null);
         for (Channel ch : channels) {
             all = all.thenCompose(v -> send(ch, msg).exceptionallyCompose(ex -> {

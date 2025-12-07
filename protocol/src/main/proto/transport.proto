@@ -4,15 +4,15 @@ import "message.proto";
 
 option java_multiple_files = true;
 option java_package = "com.arth.sakimq.protocol";
-option java_outer_classname = "SakiMQTransProto";
+option java_outer_classname = "SakiMQTransMsg";
 
 // Transport message definition
-message TransportProto {
+message TransportMessage {
   MessageType type = 1;
   int32 delivery_tag = 2;
   int64 timestamp = 3;
   oneof payload {
-    MessageProto message = 4;    // for MessageTye = MESSAGE
+    Message message = 4;         // for MessageTye = MESSAGE
     AckProto ack = 5;            // for MessageTye = ACK
     ConnectProto connect = 6;    // for MessageTye = CONNECT
   }

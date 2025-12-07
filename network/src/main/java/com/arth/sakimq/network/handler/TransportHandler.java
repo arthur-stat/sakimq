@@ -1,16 +1,16 @@
 package com.arth.sakimq.network.handler;
 
-import com.arth.sakimq.protocol.TransportProto;
+import com.arth.sakimq.protocol.TransportMessage;
 
 public interface TransportHandler {
 
-    void onMessage(TransportProto msg);
+    void onMessage(TransportMessage msg);
 
-    void onAck(TransportProto msg);
+    void onAck(TransportMessage msg);
 
-    void onHeartbeat(TransportProto msg);
+    void onHeartbeat(TransportMessage msg);
 
-    void onConnect(TransportProto msg);
+    void onConnect(TransportMessage msg);
 
-    void onDisconnect(TransportProto msg);
+    void onDisconnect(TransportMessage msg);
 }

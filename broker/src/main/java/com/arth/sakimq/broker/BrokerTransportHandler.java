@@ -1,18 +1,18 @@
-package com.arth.sakimq.clients.producer.impl;
+package com.arth.sakimq.broker;
 
-import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.network.handler.TransportHandler;
 import com.arth.sakimq.protocol.TransportMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-public class ProducerTransportHandler implements TransportHandler {
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-    private static final Logger log = LoggerFactory.getLogger(LoggerName.PRODUCER);
+public class BrokerTransportHandler implements TransportHandler {
+
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     @Override
     public void onMessage(TransportMessage msg) {
-        log.warn("Received message in producer handler, which is unexpected: {}", msg);
+
     }
 
     @Override
