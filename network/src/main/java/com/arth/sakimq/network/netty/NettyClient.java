@@ -21,6 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public class NettyClient implements AutoCloseable {
 
@@ -67,7 +68,11 @@ public class NettyClient implements AutoCloseable {
                                 try {
                                     switch (msg.getType()) {
                                         case MESSAGE -> handler.onMessage(msg);
-                                        case ACK -> handler.onAck(msg);
+                                        case ACK -> {
+                                            handler.onAck(msg);
+                                            CompletableFuture<Void> f = pendingAcks.remove(msg.getDeliveryTag());
+                                            if (f != null) f.complete(null);
+                                        }
                                         case HEARTBEAT -> handler.onHeartbeat(msg);
                                         case CONNECT -> handler.onConnect(msg);
                                         case DISCONNECT -> handler.onDisconnect(msg);
@@ -89,6 +94,8 @@ public class NettyClient implements AutoCloseable {
                             public void channelInactive(ChannelHandlerContext ctx) {
                                 log.info("Disconnected from server: {}", ctx.channel().remoteAddress());
                                 connectionFuture.completeExceptionally(new RuntimeException("Connection lost"));
+                                pendingAcks.forEach((k, f) -> f.completeExceptionally(new RuntimeException("Channel closed")));
+                                pendingAcks.clear();
                             }
 
                             @Override
@@ -113,52 +120,65 @@ public class NettyClient implements AutoCloseable {
         return connectionFuture;
     }
 
-    public void send(TransportProto msg) throws Exception {
-        Exception lastException = null;
-
-        for (int attempt = 0; attempt < NettyClientConfig.maxRetries; attempt++) {
-            try {
-                sendWithoutRetry(msg);
-                return;
-            } catch (Exception e) {
-                lastException = e;
-                if (attempt < NettyClientConfig.maxRetries - 1) {
-                    log.warn("Send failed (attempt {} of {}): ", attempt + 1, NettyClientConfig.maxRetries, e);
-                }
-            }
-        }
-
-        log.error("Send failed after {} attempts", NettyClientConfig.maxRetries, lastException);
-        throw lastException;
+    public CompletableFuture<Void> send(TransportProto msg) {
+        return attemptSend(msg, NettyClientConfig.maxRetries);
     }
 
-    private void sendWithoutRetry(TransportProto msg) throws Exception {
+    private CompletableFuture<Void> attemptSend(TransportProto msg, int remainingAttempts) {
         if (clientChannel == null || !clientChannel.isActive()) {
-            throw new UnavailableChannelException("Not connected");
+            CompletableFuture<Void> failed = new CompletableFuture<>();
+            failed.completeExceptionally(new UnavailableChannelException("Not connected"));
+            return failed;
         }
 
         int tag = msg.getDeliveryTag();
         CompletableFuture<Void> ackFuture = new CompletableFuture<>();
         pendingAcks.put(tag, ackFuture);
 
-        try {
-            /* async send messages */
-            clientChannel.writeAndFlush(msg);
-            /* sync wait-and-get in a virtual thread: guaranteed by the upper-layer caller */
-            ackFuture.get(NettyClientConfig.timeout, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            pendingAcks.remove(tag);
-            throw e;
-        }
+        /* async send messages */
+        ChannelFuture writeFuture = clientChannel.writeAndFlush(msg);
+        writeFuture.addListener((ChannelFutureListener) wf -> {
+            if (!wf.isSuccess()) {
+                CompletableFuture<Void> removed = pendingAcks.remove(tag);
+                if (removed != null) removed.completeExceptionally(wf.cause());
+            }
+        });
+
+        CompletableFuture<Void> timeoutFuture = ackFuture.orTimeout(NettyClientConfig.timeout, TimeUnit.SECONDS);
+
+        return timeoutFuture.handle((res, ex) -> {
+            if (ex == null) {
+                return CompletableFuture.<Void>completedFuture(null);
+            } else {
+                pendingAcks.remove(tag);
+                if (remainingAttempts > 1) {
+                    log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, ex.getMessage());
+                    return attemptSend(msg, remainingAttempts - 1);
+                } else {
+                    CompletableFuture<Void> failed = new CompletableFuture<>();
+                    failed.completeExceptionally(ex);
+                    return failed;
+                }
+            }
+        }).thenCompose(Function.identity());
     }
 
-    public void disconnect() {
-        if (clientChannel != null) clientChannel.close();
+    public CompletableFuture<Void> disconnect() {
+        CompletableFuture<Void> disconnectFuture = new CompletableFuture<>();
+        if (clientChannel != null) {
+            clientChannel.close().addListener(cf -> {
+                if (cf.isSuccess()) disconnectFuture.complete(null);
+                else disconnectFuture.completeExceptionally(cf.cause());
+            });
+        } else {
+            disconnectFuture.complete(null);
+        }
         if (workerGroup != null) workerGroup.shutdownGracefully();
+        return disconnectFuture;
     }
 
     @Override
     public void close() {
-        disconnect();
+        disconnect().join();
     }
 }
