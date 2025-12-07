@@ -1,4 +1,8 @@
 package com.arth.sakimq.common.exchange;
 
-public interface Exchange {
+import com.arth.sakimq.common.message.Message;
+
+public abstract class Exchange {
+
+    public abstract void publish(String tag, Message message);
 }
