@@ -1,7 +1,7 @@
 package com.arth.sakimq.broker.core.impl;
 
 import com.arth.sakimq.broker.core.Broker;
-import com.arth.sakimq.broker.session.SessionManager;
+import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.network.netty.NettyServer;
 import org.slf4j.Logger;
@@ -15,13 +15,13 @@ public class DefaultBroker implements Broker {
 
     private final int port;
     private final TopicsManager topicsManager;
-    private final SessionManager sessionManager;
+    private final SeqManager sessionManager;
     private final NettyServer nettyServer;
 
     public DefaultBroker(int port) {
         this.port = port;
         this.topicsManager = new TopicsManager();
-        this.sessionManager = new SessionManager();
+        this.sessionManager = new SeqManager();
         this.nettyServer = new NettyServer(port, new DefaultBrokerTransportHandler(topicsManager, sessionManager));
     }
 

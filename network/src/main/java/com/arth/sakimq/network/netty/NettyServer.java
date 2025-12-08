@@ -36,7 +36,6 @@ public class NettyServer implements AutoCloseable {
     private EventLoopGroup workerGroup;
     private final TransportHandler handler;
     private final ChannelGroup channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
-    private final ConcurrentMap<Integer, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
 
     public NettyServer(int port, TransportHandler handler) {
         this.port = port;
@@ -75,16 +74,13 @@ public class NettyServer implements AutoCloseable {
                             @Override
                             protected void channelRead0(ChannelHandlerContext ctx, TransportMessage msg) throws Exception {
                                 try {
+                                    Channel channel = ctx.channel();
                                     switch (msg.getType()) {
-                                        case ACK -> {
-                                            CompletableFuture<Void> f = pendingAcks.remove(msg.getDeliveryTag());
-                                            if (f != null) f.complete(null);
-                                            handler.onAck(msg);
-                                        }
-                                        case MESSAGE -> handler.onMessage(msg);
-                                        case HEARTBEAT -> handler.onHeartbeat(msg);
-                                        case CONNECT -> handler.onConnect(msg);
-                                        case DISCONNECT -> handler.onDisconnect(msg);
+                                        case ACK -> handler.onAck(channel, msg);
+                                        case MESSAGE -> handler.onMessage(channel, msg);
+                                        case HEARTBEAT -> handler.onHeartbeat(channel, msg);
+                                        case CONNECT -> handler.onConnect(channel, msg);
+                                        case DISCONNECT -> handler.onDisconnect(channel, msg);
                                         default -> log.warn("Received unknown message type: {}", msg.getType());
                                     }
                                 } catch (Exception e) {
@@ -102,8 +98,6 @@ public class NettyServer implements AutoCloseable {
                             public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                                 channels.remove(ctx.channel());
                                 log.info("Client disconnected: {}", ctx.channel().remoteAddress());
-                                pendingAcks.forEach((k, f) -> f.completeExceptionally(new RuntimeException("Client disconnected")));
-                                pendingAcks.clear();
                             }
 
                             @Override
@@ -131,45 +125,23 @@ public class NettyServer implements AutoCloseable {
     }
 
     public CompletableFuture<Void> send(Channel channel, TransportMessage msg) {
-        return attemptSend(channel, msg, NettyClientConfig.maxRetries);
-    }
-
-    private CompletableFuture<Void> attemptSend(Channel channel, TransportMessage msg, int remainingAttempts) {
         if (channel == null || !channel.isActive()) {
             CompletableFuture<Void> failed = new CompletableFuture<>();
             failed.completeExceptionally(new RuntimeException("Target channel not active"));
             return failed;
         }
 
-        int tag = msg.getDeliveryTag();
-        CompletableFuture<Void> ackFuture = new CompletableFuture<>();
-        pendingAcks.put(tag, ackFuture);
-
+        CompletableFuture<Void> future = new CompletableFuture<>();
         ChannelFuture writeFuture = channel.writeAndFlush(msg);
         writeFuture.addListener((ChannelFutureListener) wf -> {
-            if (!wf.isSuccess()) {
-                CompletableFuture<Void> removed = pendingAcks.remove(tag);
-                if (removed != null) removed.completeExceptionally(wf.cause());
+            if (wf.isSuccess()) {
+                future.complete(null);
+            } else {
+                future.completeExceptionally(wf.cause());
             }
         });
 
-        CompletableFuture<Void> timeoutFuture = ackFuture.orTimeout(NettyClientConfig.timeout, TimeUnit.SECONDS);
-
-        return timeoutFuture.handle((res, ex) -> {
-            if (ex == null) {
-                return CompletableFuture.<Void>completedFuture(null);
-            } else {
-                pendingAcks.remove(tag);
-                if (remainingAttempts > 1) {
-                    log.warn("Send to {} failed, retrying (remaining {}): {}", channel.remoteAddress(), remainingAttempts - 1, ex.getMessage());
-                    return attemptSend(channel, msg, remainingAttempts - 1);
-                } else {
-                    CompletableFuture<Void> failed = new CompletableFuture<>();
-                    failed.completeExceptionally(ex);
-                    return failed;
-                }
-            }
-        }).thenCompose(Function.identity());
+        return future;
     }
 
     public CompletableFuture<Void> broadcast(TransportMessage msg) {

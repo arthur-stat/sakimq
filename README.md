@@ -16,6 +16,8 @@ SakiMQ is a lightweight message queue system implemented in Java.
 - The integration of Netty's I/O multiplexing and JDK21's virtual threads enables high-performance concurrency with a concise synchronous coding style.
 - Components communicate efficiently via Protobuf.
 - Multiple design patterns were applied. For example, use the builder pattern for the creation of Exchange.
+- At-least-once delivery is guaranteed through the ACK confirmation mechanism, while at-most-once delivery is ensured through idempotent processing between the Producer and the Broker.
+- Adopts RFC 1982 serial number arithmetic, ensuring correct and overflow-safe sequence comparison on a wrap-around 64-bit counter.
 
 # TO DO
 
