@@ -8,16 +8,20 @@ import com.arth.sakimq.protocol.Message;
 import com.arth.sakimq.protocol.MessagePack;
 import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
+import com.google.protobuf.ByteString;
+
+import java.util.List;
+import java.util.Map;
 
 public class Test {
-    public static void main(String[] args) throws InterruptedException {
-        Producer producer = new DefaultProducer("localhost", 8080);
+    public static void main(String[] args) throws Exception {
+        DefaultProducer producer = new DefaultProducer("localhost", 8080);
         DefaultBroker broker = new DefaultBroker(8080);
 
         broker.start();
         producer.start();
 
-        producer.send(testTransportMessage());
+        producer.send(List.of(), Map.of(), ByteString.copyFrom(new byte[0]));
 
     }
 
@@ -38,7 +42,7 @@ public class Test {
 
         return TransportMessage.newBuilder()
                 .setType(MessageType.MESSAGE)
-                .setDeliveryTag(12345)
+                .setSeq(12345)
                 .setTimestamp(System.currentTimeMillis())
                 .setMessagePack(messagePack)
                 .build();

@@ -9,12 +9,12 @@ option java_outer_classname = "SakiMQTransMsg";
 // Transport message definition
 message TransportMessage {
   MessageType type = 1;
-  int32 delivery_tag = 2;
+  int64 seq = 2;
   int64 timestamp = 3;
   oneof payload {
-    MessagePack message_pack = 4;   // for MessageTye = MESSAGE
-    AckProto ack = 5;               // for MessageTye = ACK
-    ConnectProto connect = 6;       // for MessageTye = CONNECT
+    MessagePack message_pack = 4;    // for MessageTye = MESSAGE
+    AckPayload ack = 5;              // for MessageTye = ACK
+    ConnectPayload connect = 6;      // for MessageTye = CONNECT
   }
 }
 
@@ -25,12 +25,6 @@ enum MessageType {
   HEARTBEAT = 2;
   CONNECT = 3;
   DISCONNECT = 4;
-}
-
-// Message Pack
-message MessagePack {
-  repeated string topics = 1;
-  Message message = 2;
 }
 
 // Data structure for ACK messages

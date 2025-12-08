@@ -24,11 +24,6 @@
         which had been instrumental in easily implementing Consumer Groups.
         Therefore, we are considering the legacy version released in 2021
         instead of the latest version launched in 2023. -->
-        <dependency>
-            <groupId>com.lmax</groupId>
-            <artifactId>disruptor</artifactId>
-            <version>3.4.4</version>
-        </dependency>
     </dependencies>
 
 </project>
