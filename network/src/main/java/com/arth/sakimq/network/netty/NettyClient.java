@@ -1,7 +1,6 @@
 package com.arth.sakimq.network.netty;
 
 import com.arth.sakimq.common.constant.LoggerName;
-import com.arth.sakimq.network.config.DefaultNettyConfig;
 import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.MessageType;
@@ -46,7 +45,7 @@ public class NettyClient {
     public NettyClient(String clientName, ClientProtocolHandler handler) {
         this.clientName = clientName;
         this.handler = handler;
-        this.config = DefaultNettyConfig.getConfig();
+        this.config = NettyConfig.getConfig();
     }
 
     /**
@@ -73,7 +72,7 @@ public class NettyClient {
     public NettyClient(String host, int port, String clientName, ClientProtocolHandler handler) {
         this.clientName = clientName;
         this.handler = handler;
-        this.config = DefaultNettyConfig.getConfig();
+        this.config = NettyConfig.getConfig();
         this.addBroker(host, port);
     }
 
@@ -103,7 +102,7 @@ public class NettyClient {
     public NettyClient(List<String> brokers, String clientName, ClientProtocolHandler handler) {
         this.clientName = clientName;
         this.handler = handler;
-        this.config = DefaultNettyConfig.getConfig();
+        this.config = NettyConfig.getConfig();
         for (String broker : brokers) {
             String[] parts = broker.split(":");
             if (parts.length == 2) {

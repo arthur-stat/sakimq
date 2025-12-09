@@ -1,6 +1,6 @@
 package com.arth.sakimq.common.exception;
 
-public abstract class MessageQueueException extends Exception {
+public abstract class MessageQueueException extends RuntimeException {
 
     public MessageQueueException(String message) {
         super(message);

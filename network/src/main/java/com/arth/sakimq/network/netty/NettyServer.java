@@ -1,14 +1,16 @@
 package com.arth.sakimq.network.netty;
 
 import com.arth.sakimq.common.constant.LoggerName;
-import com.arth.sakimq.network.config.DefaultNettyConfig;
 import com.arth.sakimq.network.config.NettyConfig;
+import com.arth.sakimq.network.handler.BrokerProtocolHandler;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
+import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.protobuf.ProtobufDecoder;
@@ -30,31 +32,31 @@ public class NettyServer implements AutoCloseable {
     private Channel serverChannel;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
-    private final ClientProtocolHandler handler;
+    private final BrokerProtocolHandler handler;
     private final ChannelGroup channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
     private final NettyConfig config;
 
-    // Constructor that accepts custom config
-    public NettyServer(NettyConfig config, ClientProtocolHandler handler) {
-        this.config = config;
-        this.port = config.getPort(); // Use port from config
+    public NettyServer(BrokerProtocolHandler handler) {
+        this(NettyConfig.getConfig(), handler);
+    }
+
+    public NettyServer(int port, BrokerProtocolHandler handler) {
+        this.config = NettyConfig.getConfig();
+        this.port = port;
         this.handler = handler;
     }
-    
-    // Default constructor that uses the default config
-    public NettyServer(ClientProtocolHandler handler) {
-        this(DefaultNettyConfig.getConfig(), handler);
+
+    public NettyServer(NettyConfig config, BrokerProtocolHandler handler) {
+        this.config = config;
+        this.port = config.getPort();
+        this.handler = handler;
     }
 
     public CompletableFuture<Void> start() throws InterruptedException {
         CompletableFuture<Void> startFuture = new CompletableFuture<>();
 
-        // Use virtual threads for EventLoopGroups
-        bossGroup = new MultiThreadIoEventLoopGroup(1, Thread.ofVirtual().factory());
-        workerGroup = new MultiThreadIoEventLoopGroup(
-                0,
-                Thread.ofVirtual().factory()
-        );
+        bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
+        workerGroup = new MultiThreadIoEventLoopGroup(0, NioIoHandler.newFactory());
 
         log.info("NettyServer using configuration: port={}, timeout={}, maxFrameLength={}, lengthFieldLength={}, initialBytesToStrip={}",
                 config.getPort(), config.getTimeout(), config.getMaxFrameLength(),
@@ -74,8 +76,8 @@ public class NettyServer implements AutoCloseable {
 
                         // Use config values for LengthFieldBasedFrameDecoder
                         pipeline.addLast("lenDecoder", new LengthFieldBasedFrameDecoder(
-                                config.getMaxFrameLength(), 0, 
-                                config.getLengthFieldLength(), 0, 
+                                config.getMaxFrameLength(), 0,
+                                config.getLengthFieldLength(), 0,
                                 config.getInitialBytesToStrip()));
                         pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportMessage.getDefaultInstance()));
 
@@ -86,19 +88,7 @@ public class NettyServer implements AutoCloseable {
 
                             @Override
                             protected void channelRead0(ChannelHandlerContext ctx, TransportMessage msg) throws Exception {
-                                try {
-                                    Channel channel = ctx.channel();
-                                    switch (msg.getType()) {
-                                        case ACK -> handler.onAck(channel, msg);
-                                        case MESSAGE -> handler.onHandleMessage(channel, msg);
-                                        case HEARTBEAT -> handler.onHeartbeat(channel, msg);
-                                        case CONNECT -> handler.onConnect(channel, msg);
-                                        case DISCONNECT -> handler.onDisconnect(channel, msg);
-                                        default -> log.warn("Received unknown message type: {}", msg.getType());
-                                    }
-                                } catch (Exception e) {
-                                    log.error("Error handling message: ", e);
-                                }
+                                handler.dispatch(ctx, msg);
                             }
 
                             @Override
@@ -106,8 +96,8 @@ public class NettyServer implements AutoCloseable {
                                 Channel channel = ctx.channel();
                                 channels.add(channel);
                                 log.info("Client connected: {}", channel.remoteAddress());
-                                // Call handler's onConnect method when channel is active
-                                handler.onConnect(channel, null);
+                                // Don't automatically create CONNECT message
+                                // Wait for client to send its own CONNECT message
                             }
 
                             @Override
@@ -115,8 +105,10 @@ public class NettyServer implements AutoCloseable {
                                 Channel channel = ctx.channel();
                                 channels.remove(channel);
                                 log.info("Client disconnected: {}", channel.remoteAddress());
-                                // Call handler's onDisconnect method
-                                handler.onDisconnect(channel, null);
+                                // Don't automatically create DISCONNECT message
+                                // Wait for client to send its own DISCONNECT message or handle connection cleanup
+                                // Call handler's onDisconnect method with null to indicate connection loss
+                                handler.onDisconnect(ctx, null);
                             }
 
                             @Override

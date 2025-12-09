@@ -67,13 +67,23 @@ public class SeqManager {
     }
 
     /**
+     * 注册新客户端
+     *
+     * @param clientId 客户端ID
+     */
+    public void registerClient(String clientId) {
+        producerSeqMap.computeIfAbsent(clientId, k -> new AtomicLong(-1));
+        log.info("Registered new client: {}", clientId);
+    }
+
+    /**
      * 获取客户端的当前序列号
      *
      * @param clientId 客户端ID
-     * @return 当前序列号，如果客户端不存在则返回0
+     * @return 当前序列号，如果客户端不存在则返回-1
      */
     public long getCurrentSeq(String clientId) {
         AtomicLong lastSeq = producerSeqMap.get(clientId);
-        return lastSeq != null ? lastSeq.get() : 0;
+        return lastSeq != null ? lastSeq.get() : -1;
     }
 }

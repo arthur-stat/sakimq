@@ -16,6 +16,8 @@ import java.util.Map;
 public class Test {
     public static void main(String[] args) throws Exception {
         DefaultProducer producer = new DefaultProducer();
+        producer.addBroker("localhost", 8080);
+
         DefaultBroker broker = new DefaultBroker(8080);
 
         broker.start();
