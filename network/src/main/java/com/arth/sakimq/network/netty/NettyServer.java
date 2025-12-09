@@ -1,14 +1,14 @@
 package com.arth.sakimq.network.netty;
 
 import com.arth.sakimq.common.constant.LoggerName;
-import com.arth.sakimq.network.config.NettyClientConfig;
-import com.arth.sakimq.network.handler.TransportHandler;
+import com.arth.sakimq.network.config.DefaultNettyConfig;
+import com.arth.sakimq.network.config.NettyConfig;
+import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
-import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.protobuf.ProtobufDecoder;
@@ -22,10 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 public class NettyServer implements AutoCloseable {
 
@@ -34,22 +30,35 @@ public class NettyServer implements AutoCloseable {
     private Channel serverChannel;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
-    private final TransportHandler handler;
+    private final ClientProtocolHandler handler;
     private final ChannelGroup channels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
+    private final NettyConfig config;
 
-    public NettyServer(int port, TransportHandler handler) {
-        this.port = port;
+    // Constructor that accepts custom config
+    public NettyServer(NettyConfig config, ClientProtocolHandler handler) {
+        this.config = config;
+        this.port = config.getPort(); // Use port from config
         this.handler = handler;
+    }
+    
+    // Default constructor that uses the default config
+    public NettyServer(ClientProtocolHandler handler) {
+        this(DefaultNettyConfig.getConfig(), handler);
     }
 
     public CompletableFuture<Void> start() throws InterruptedException {
         CompletableFuture<Void> startFuture = new CompletableFuture<>();
 
-        bossGroup = new MultiThreadIoEventLoopGroup(1, NioIoHandler.newFactory());
+        // Use virtual threads for EventLoopGroups
+        bossGroup = new MultiThreadIoEventLoopGroup(1, Thread.ofVirtual().factory());
         workerGroup = new MultiThreadIoEventLoopGroup(
                 0,
-                NioIoHandler.newFactory()
+                Thread.ofVirtual().factory()
         );
+
+        log.info("NettyServer using configuration: port={}, timeout={}, maxFrameLength={}, lengthFieldLength={}, initialBytesToStrip={}",
+                config.getPort(), config.getTimeout(), config.getMaxFrameLength(),
+                config.getLengthFieldLength(), config.getInitialBytesToStrip());
 
         ServerBootstrap bootstrap = new ServerBootstrap();
         bootstrap.group(bossGroup, workerGroup)
@@ -63,10 +72,14 @@ public class NettyServer implements AutoCloseable {
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline pipeline = ch.pipeline();
 
-                        pipeline.addLast("lenDecoder", new LengthFieldBasedFrameDecoder(1024 * 1024, 0, 4, 0, 4));
+                        // Use config values for LengthFieldBasedFrameDecoder
+                        pipeline.addLast("lenDecoder", new LengthFieldBasedFrameDecoder(
+                                config.getMaxFrameLength(), 0, 
+                                config.getLengthFieldLength(), 0, 
+                                config.getInitialBytesToStrip()));
                         pipeline.addLast("protoDecoder", new ProtobufDecoder(TransportMessage.getDefaultInstance()));
 
-                        pipeline.addLast("lenEncoder", new LengthFieldPrepender(4));
+                        pipeline.addLast("lenEncoder", new LengthFieldPrepender(config.getLengthFieldLength()));
                         pipeline.addLast("protoEncoder", new ProtobufEncoder());
 
                         pipeline.addLast("serverHandler", new SimpleChannelInboundHandler<TransportMessage>() {
@@ -77,7 +90,7 @@ public class NettyServer implements AutoCloseable {
                                     Channel channel = ctx.channel();
                                     switch (msg.getType()) {
                                         case ACK -> handler.onAck(channel, msg);
-                                        case MESSAGE -> handler.onMessage(channel, msg);
+                                        case MESSAGE -> handler.onHandleMessage(channel, msg);
                                         case HEARTBEAT -> handler.onHeartbeat(channel, msg);
                                         case CONNECT -> handler.onConnect(channel, msg);
                                         case DISCONNECT -> handler.onDisconnect(channel, msg);
@@ -90,14 +103,20 @@ public class NettyServer implements AutoCloseable {
 
                             @Override
                             public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                                channels.add(ctx.channel());
-                                log.info("Client connected: {}", ctx.channel().remoteAddress());
+                                Channel channel = ctx.channel();
+                                channels.add(channel);
+                                log.info("Client connected: {}", channel.remoteAddress());
+                                // Call handler's onConnect method when channel is active
+                                handler.onConnect(channel, null);
                             }
 
                             @Override
                             public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                channels.remove(ctx.channel());
-                                log.info("Client disconnected: {}", ctx.channel().remoteAddress());
+                                Channel channel = ctx.channel();
+                                channels.remove(channel);
+                                log.info("Client disconnected: {}", channel.remoteAddress());
+                                // Call handler's onDisconnect method
+                                handler.onDisconnect(channel, null);
                             }
 
                             @Override
@@ -185,6 +204,10 @@ public class NettyServer implements AutoCloseable {
 
     public Channel getServerChannel() {
         return serverChannel;
+    }
+
+    public int getPort() {
+        return port;
     }
 
     @Override

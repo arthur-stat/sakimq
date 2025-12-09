@@ -13,7 +13,7 @@ public class QueueManager {
 
     public DisruptorQueue register(DisruptorQueue queue) {
         int id = idGenerator.getAndIncrement();
-        PullQueue q = new DisruptorQueue(new QueueConfig());
+        PullQueue q = new DisruptorQueue(QueueConfig.getConfig());
         q.setQueueId(id);
         queues.put(id, queue);
         return queue;
