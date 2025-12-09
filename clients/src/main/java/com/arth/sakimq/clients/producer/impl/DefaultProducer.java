@@ -1,15 +1,18 @@
 package com.arth.sakimq.clients.producer.impl;
 
+import com.arth.sakimq.clients.config.DefaultProducerConfig;
+import com.arth.sakimq.clients.config.ProducerConfig;
 import com.arth.sakimq.clients.producer.Producer;
+import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.netty.NettyClient;
-import com.arth.sakimq.network.config.NettyClientConfig;
-import com.arth.sakimq.network.handler.TransportHandler;
+import com.arth.sakimq.network.config.DefaultNettyConfig;
+import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.Message;
 import com.arth.sakimq.protocol.MessagePack;
 import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import com.google.protobuf.ByteString;
-import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,60 +24,30 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 
-public class DefaultProducer implements Producer {
+public class DefaultProducer implements Producer, AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultProducer.class);
     private final String name;
     private final NettyClient client;
+    private final ProducerConfig config;
     private final AtomicLong seq = new AtomicLong(0);
     private final ConcurrentMap<Long, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
-    private final DefaultProducerTransportHandler transportHandler;
+    private final DefaultProducerHandler transportHandler;
 
-    private class DefaultProducerTransportHandler implements TransportHandler {
-        @Override
-        public void onMessage(Channel channel, TransportMessage msg) {
-            log.warn("Received unexpected message from broker: {}", msg);
-        }
-
-        @Override
-        public void onAck(Channel channel, TransportMessage msg) {
-            long deliveryTag = msg.getSeq();
-            CompletableFuture<Void> future = pendingAcks.remove(deliveryTag);
-            if (future != null) {
-                future.complete(null);
-            }
-        }
-
-        @Override
-        public void onHeartbeat(Channel channel, TransportMessage msg) {
-            // TODO
-        }
-
-        @Override
-        public void onConnect(Channel channel, TransportMessage msg) {
-            // Not used by producer
-        }
-
-        @Override
-        public void onDisconnect(Channel channel, TransportMessage msg) {
-            log.info("Connection lost with broker");
-            pendingAcks.forEach((k, f) -> f.completeExceptionally(new RuntimeException("Connection lost")));
-            pendingAcks.clear();
-        }
+    public DefaultProducer() {
+        this("Producer-" + UUID.randomUUID());
     }
 
-    public DefaultProducer(String host, int port) {
-        name = "Producer-" + UUID.randomUUID();
-        this.transportHandler = new DefaultProducerTransportHandler();
-        this.client = new NettyClient(host, port, name, this.transportHandler, new NettyClientConfig());
+    public DefaultProducer(String name) {
+        this(name, DefaultProducerConfig.getConfig(), DefaultNettyConfig.getConfig());
     }
 
-    public DefaultProducer(String host, int port, String name) {
+    public DefaultProducer(String name, ProducerConfig producerConfig, NettyConfig nettyConfig) {
         this.name = name;
-        this.transportHandler = new DefaultProducerTransportHandler();
-        this.client = new NettyClient(host, port, name, this.transportHandler, new NettyClientConfig());
+        this.transportHandler = new DefaultProducerHandler();
+        this.client = new NettyClient(name, this.transportHandler, nettyConfig);
+        this.config = producerConfig;
     }
 
     public void send(List<String> topics, Map<String, String> headers, ByteString body) {
@@ -99,7 +72,7 @@ public class DefaultProducer implements Producer {
                 .setMessagePack(messagePack)
                 .build();
 
-        attemptSend(transportMessage, NettyClientConfig.maxRetries).join();
+        attemptSend(transportMessage, ).join();
     }
 
     private CompletableFuture<Void> attemptSend(TransportMessage msg, int remainingAttempts) {
@@ -108,14 +81,14 @@ public class DefaultProducer implements Producer {
         pendingAcks.put(deliveryTag, ackFuture);
 
         return client.send(msg)
-                .thenCompose(v -> ackFuture.orTimeout(NettyClientConfig.timeout, TimeUnit.SECONDS))
+                .thenCompose(v -> ackFuture.orTimeout(DefaultNettyConfig.timeout, TimeUnit.SECONDS))
                 .exceptionallyCompose(ex -> {
                     pendingAcks.remove(deliveryTag);
                     if (remainingAttempts > 1) {
                         log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, ex.getMessage());
                         return attemptSend(msg, remainingAttempts - 1);
                     } else {
-                        throw new RuntimeException("Failed to send message after " + NettyClientConfig.maxRetries + " attempts", ex);
+                        throw new RuntimeException("Failed to send message after " + DefaultNettyConfig.maxRetries + " attempts", ex);
                     }
                 });
     }
@@ -126,5 +99,82 @@ public class DefaultProducer implements Producer {
 
     public void shutdown() throws Exception {
         client.shutdown();
+    }
+
+    @Override
+    public void close() throws Exception {
+        shutdown();
+    }
+
+    private class DefaultProducerHandler implements ClientProtocolHandler {
+
+        @Override
+        public void dispatch(ChannelHandlerContext ctx, TransportMessage msg) {
+            if (msg instanceof TransportMessage transportMsg) {
+                switch (transportMsg.getType()) {
+                    case MESSAGE -> onMessage(ctx, transportMsg);
+                    case ACK -> onAck(ctx, transportMsg);
+                    case HEARTBEAT -> onHeartbeat(ctx, transportMsg);
+                    case DISCONNECT -> onDisconnect(ctx);
+                    default -> log.warn("Received unsupported message type: {}", transportMsg.getType());
+                }
+            }
+        }
+
+        /**
+         * For producer, onMessage is called when sending messages to broker
+         */
+        @Override
+        public void onMessage(ChannelHandlerContext ctx, TransportMessage msg) {
+            ctx.channel().writeAndFlush(msg);
+            log.debug("Sent message from client: type={}, seq={}", msg.getType(), msg.getSeq());
+        }
+
+        /**
+         * For producer, onAck is called when receiving ACKs from broker
+         */
+        @Override
+        public void onAck(ChannelHandlerContext ctx, TransportMessage msg) {
+            long deliveryTag = msg.getSeq();
+            CompletableFuture<Void> future = pendingAcks.remove(deliveryTag);
+            if (future != null) {
+                future.complete(null);
+            }
+        }
+
+        @Override
+        public void onHeartbeat(ChannelHandlerContext ctx, TransportMessage msg) {
+            // TODO
+        }
+
+        /**
+         * For producer, onConnect is called when channel is active and sending CONNECT message
+         */
+        @Override
+        public void onConnect(ChannelHandlerContext ctx) {
+            TransportMessage connectMsg = TransportMessage.newBuilder()
+                    .setType(MessageType.CONNECT)
+                    .setSeq(seq.incrementAndGet())
+                    .setTimestamp(System.currentTimeMillis())
+                    .setConnect(com.arth.sakimq.protocol.ConnectPayload.newBuilder()
+                            .setClientId(name)
+                            .setUsername("")
+                            .setPassword("")
+                            .build())
+                    .build();
+            client.send(connectMsg).thenAccept(v -> {
+                log.info("CONNECT message sent successfully");
+            }).exceptionally(ex -> {
+                log.error("Failed to send CONNECT message: {}", ex.getMessage());
+                return null;
+            });
+        }
+
+        @Override
+        public void onDisconnect(ChannelHandlerContext ctx) {
+            log.info("Connection lost with broker");
+            pendingAcks.forEach((k, f) -> f.completeExceptionally(new RuntimeException("Connection lost")));
+            pendingAcks.clear();
+        }
     }
 }

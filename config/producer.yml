@@ -1,0 +1,2 @@
+# Producer configuration
+maxRetries: 3

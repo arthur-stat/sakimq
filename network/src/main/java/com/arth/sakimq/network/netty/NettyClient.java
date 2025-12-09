@@ -1,13 +1,14 @@
 package com.arth.sakimq.network.netty;
 
 import com.arth.sakimq.common.constant.LoggerName;
-import com.arth.sakimq.network.config.NettyClientConfig;
-import com.arth.sakimq.network.handler.TransportHandler;
+import com.arth.sakimq.network.config.DefaultNettyConfig;
+import com.arth.sakimq.network.config.NettyConfig;
+import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.nio.NioIoHandler;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
@@ -17,67 +18,299 @@ import io.netty.handler.codec.protobuf.ProtobufEncoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 public class NettyClient {
 
     private static final Logger log = LoggerFactory.getLogger(LoggerName.NETTY_CLIENT);
-    private final String host;
-    private final int port;
     private final String clientName;
-    private final TransportHandler handler;
-    private final NettyClientConfig config;
+    private final ClientProtocolHandler handler;
+    private final NettyConfig config;
+    private final Map<InetSocketAddress, Channel> brokerChannels = new ConcurrentHashMap<>();
+    private final List<InetSocketAddress> brokerAddresses = Collections.synchronizedList(new ArrayList<>());
+    private final AtomicInteger roundRobinIndex = new AtomicInteger(0);
     private EventLoopGroup group;
-    private Channel channel;
+    private SendStrategy sendStrategy = SendStrategy.ALL;
 
-    public NettyClient(String host, int port, String clientName, TransportHandler handler, NettyClientConfig config) {
-        this.host = host;
-        this.port = port;
+    /**
+     * Default constructor for NettyClient.
+     *
+     * @param clientName the client name
+     * @param handler    the client protocol handler
+     */
+    public NettyClient(String clientName, ClientProtocolHandler handler) {
+        this.clientName = clientName;
+        this.handler = handler;
+        this.config = DefaultNettyConfig.getConfig();
+    }
+
+    /**
+     * Constructor for NettyClient with custom config.
+     *
+     * @param clientName the client name
+     * @param handler    the client protocol handler
+     * @param config     custom netty config
+     */
+    public NettyClient(String clientName, ClientProtocolHandler handler, NettyConfig config) {
         this.clientName = clientName;
         this.handler = handler;
         this.config = config;
     }
 
+    /**
+     * Constructor for NettyClient with a single broker.
+     *
+     * @param host       the broker host
+     * @param port       the broker port
+     * @param clientName the client name
+     * @param handler    the client protocol handler
+     */
+    public NettyClient(String host, int port, String clientName, ClientProtocolHandler handler) {
+        this.clientName = clientName;
+        this.handler = handler;
+        this.config = DefaultNettyConfig.getConfig();
+        this.addBroker(host, port);
+    }
+
+    /**
+     * Constructor for NettyClient with a single broker and custom config.
+     *
+     * @param host       the broker host
+     * @param port       the broker port
+     * @param clientName the client name
+     * @param handler    the client protocol handler
+     * @param config     custom netty config
+     */
+    public NettyClient(String host, int port, String clientName, ClientProtocolHandler handler, NettyConfig config) {
+        this.clientName = clientName;
+        this.handler = handler;
+        this.config = config;
+        this.addBroker(host, port);
+    }
+
+    /**
+     * Constructor for NettyClient with multiple brokers.
+     *
+     * @param brokers    list of broker addresses in format "host:port"
+     * @param clientName the client name
+     * @param handler    the client protocol handler
+     */
+    public NettyClient(List<String> brokers, String clientName, ClientProtocolHandler handler) {
+        this.clientName = clientName;
+        this.handler = handler;
+        this.config = DefaultNettyConfig.getConfig();
+        for (String broker : brokers) {
+            String[] parts = broker.split(":");
+            if (parts.length == 2) {
+                String host = parts[0];
+                int port = Integer.parseInt(parts[1]);
+                this.addBroker(host, port);
+            } else if (parts.length == 1) {
+                String host = parts[0];
+                int port = config.getPort();
+                this.addBroker(host, port);
+            }
+        }
+    }
+
+    /**
+     * Adds a broker to the client.
+     *
+     * @param host the broker host
+     * @param port the broker port
+     * @return this NettyClient for method chaining
+     */
+    public NettyClient addBroker(String host, int port) {
+        InetSocketAddress address = new InetSocketAddress(host, port);
+        synchronized (brokerAddresses) {
+            if (!brokerAddresses.contains(address)) {
+                brokerAddresses.add(address);
+                log.debug("Added broker: {}", address);
+            }
+        }
+        return this;
+    }
+
+    public NettyClient addBroker(String host) {
+        return addBroker(host, config.getPort());
+    }
+
+    /**
+     * Sets the send strategy.
+     *
+     * @param strategy the send strategy
+     * @return this NettyClient for method chaining
+     */
+    public NettyClient setSendStrategy(SendStrategy strategy) {
+        this.sendStrategy = strategy;
+        log.debug("Set send strategy: {}", strategy);
+        return this;
+    }
+
+    /**
+     * Sets the send strategy by name.
+     *
+     * @param strategyName the strategy name ("all", "random", or "load_balance")
+     * @return this NettyClient for method chaining
+     */
+    public NettyClient setSendStrategy(String strategyName) {
+        this.sendStrategy = SendStrategy.valueOf(strategyName.toUpperCase());
+        log.debug("Set send strategy: {}", this.sendStrategy);
+        return this;
+    }
+
     public void start() throws Exception {
-        group = new NioEventLoopGroup();
+        // Once Netty 5 releases its official version, the factory here can be replaced with a virtual thread factory.
+        group = new MultiThreadIoEventLoopGroup(0, NioIoHandler.newFactory());
+
+        // Connect to all brokers
+        for (InetSocketAddress address : brokerAddresses) {
+            connectToBroker(address);
+        }
+    }
+
+    /**
+     * Connects to a specific broker.
+     *
+     * @param address the broker address
+     * @throws Exception if connection fails
+     */
+    private void connectToBroker(InetSocketAddress address) throws Exception {
         Bootstrap bootstrap = new Bootstrap()
                 .group(group)
                 .channel(NioSocketChannel.class)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .handler(new ChannelInitializer<SocketChannel>() {
+
                     @Override
                     protected void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new LengthFieldBasedFrameDecoder(64 * 1024 * 1024, 0, 4, 0, 4), // 64MB limit
+                                new LengthFieldBasedFrameDecoder(
+                                        config.getMaxFrameLength(),
+                                        0,
+                                        config.getLengthFieldLength(),
+                                        0,
+                                        config.getInitialBytesToStrip()),
                                 new ProtobufDecoder(TransportMessage.getDefaultInstance()),
-                                new LengthFieldPrepender(4),
+                                new LengthFieldPrepender(config.getLengthFieldLength()),
                                 new ProtobufEncoder(),
                                 new NettyClientHandler());
                     }
                 });
 
-        channel = bootstrap.connect(host, port).sync().channel();
-        log.debug("Netty client connected to {}:{}", host, port);
+        Channel channel = bootstrap.connect(address).sync().channel();
+        brokerChannels.put(address, channel);
+        log.debug("Netty client connected to {}", address);
     }
 
     public void shutdown() throws Exception {
-        if (channel != null && channel.isOpen()) {
-            channel.close().sync();
+        // Send DISCONNECT message to all brokers
+        TransportMessage disconnectMsg = TransportMessage.newBuilder()
+                .setType(MessageType.DISCONNECT)
+                .setSeq(0)
+                .setTimestamp(System.currentTimeMillis())
+                .build();
+
+        for (Map.Entry<InetSocketAddress, Channel> entry : brokerChannels.entrySet()) {
+            Channel channel = entry.getValue();
+            if (channel != null && channel.isOpen()) {
+                try {
+                    channel.writeAndFlush(disconnectMsg).sync();
+                    log.debug("DISCONNECT message sent to {}", entry.getKey());
+                } catch (Exception e) {
+                    log.error("Failed to send DISCONNECT message to {}: ", entry.getKey(), e);
+                }
+                channel.close().sync();
+            }
         }
+
         if (group != null && !group.isShuttingDown()) {
             group.shutdownGracefully().sync();
         }
+
+        brokerChannels.clear();
+        brokerAddresses.clear();
         log.debug("Netty client shutdown");
     }
 
+    /**
+     * Gets active channels.
+     *
+     * @return list of active channels
+     */
+    private List<Channel> getActiveChannels() {
+        return brokerChannels.values().stream()
+                .filter(Channel::isActive)
+                .collect(Collectors.toList());
+    }
+
     public CompletableFuture<Void> send(TransportMessage msg) {
-        if (channel == null || !channel.isActive()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Channel is not active"));
+        List<Channel> activeChannels = getActiveChannels();
+        if (activeChannels.isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("No active channels"));
         }
 
+        switch (sendStrategy) {
+            case ALL:
+                return sendToAll(activeChannels, msg);
+            case RANDOM:
+                return sendToRandom(activeChannels, msg);
+            case LOAD_BALANCE:
+                // TODO
+                return sendToRandom(activeChannels, msg);
+            default:
+                log.warn("Unknown send strategy: {}, falling back to all", sendStrategy);
+                return sendToAll(activeChannels, msg);
+        }
+    }
+
+    /**
+     * Sends message to all active channels.
+     *
+     * @param channels list of active channels
+     * @param msg      the message to send
+     * @return CompletableFuture that completes when all sends are done
+     */
+    private CompletableFuture<Void> sendToAll(List<Channel> channels, TransportMessage msg) {
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (Channel channel : channels) {
+            CompletableFuture<Void> future = sendToChannel(channel, msg);
+            futures.add(future);
+        }
+
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .thenAccept(v -> log.debug("Message sent to all brokers, sequence: {}", msg.getSeq()));
+    }
+
+    /**
+     * Sends message to a random active channel.
+     *
+     * @param channels list of active channels
+     * @param msg      the message to send
+     * @return CompletableFuture that completes when send is done
+     */
+    private CompletableFuture<Void> sendToRandom(List<Channel> channels, TransportMessage msg) {
+        Channel channel = channels.get(new Random().nextInt(channels.size()));
+        log.debug("Selected random channel to send message, sequence: {}", msg.getSeq());
+        return sendToChannel(channel, msg);
+    }
+
+    /**
+     * Sends message to a specific channel.
+     *
+     * @param channel the channel to send to
+     * @param msg     the message to send
+     * @return CompletableFuture that completes when send is done
+     */
+    private CompletableFuture<Void> sendToChannel(Channel channel, TransportMessage msg) {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        // Send the message
         channel.writeAndFlush(msg).addListener((ChannelFutureListener) cf -> {
             if (cf.isSuccess()) {
                 log.debug("Message sent successfully, sequence: {}", msg.getSeq());
@@ -91,38 +324,43 @@ public class NettyClient {
         return future;
     }
 
+    // Define send strategy types
+    public enum SendStrategy {
+        ALL,           // Send to all brokers
+        RANDOM,        // Send to random broker
+        LOAD_BALANCE   // Reserved for future load balancing implementation
+    }
+
     /**
-     * Netty client handler to handle incoming messages
+     * Netty client handler to dispatch incoming messages
      */
     private class NettyClientHandler extends ChannelInboundHandlerAdapter {
 
+        @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             if (msg instanceof TransportMessage transportMsg) {
-                Channel channel = ctx.channel();
-                switch (transportMsg.getType()) {
-                    case ACK -> handler.onAck(channel, transportMsg);
-                    case MESSAGE -> handler.onMessage(channel, transportMsg);
-                    case HEARTBEAT -> handler.onHeartbeat(channel, transportMsg);
-                    case CONNECT -> handler.onConnect(channel, transportMsg);
-                    case DISCONNECT -> handler.onDisconnect(channel, transportMsg);
-                    default -> log.warn("Received unknown message type: {}", transportMsg.getType());
-                }
+                handler.dispatch(ctx, transportMsg);
+            } else {
+                log.error("Invalid message type: {}", msg.getClass().getName());
             }
         }
 
         // Send CONNECT message to server
+        @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("TCP channel active");
-            Channel channel = ctx.channel();
-            handler.onConnect(channel, null);
+            handler.onConnect(ctx);
             super.channelActive(ctx);
         }
 
+        @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
             log.info("TCP channel inactive");
+            handler.onDisconnect(ctx);
             super.channelInactive(ctx);
         }
 
+        @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
             log.error("Netty error: ", cause);
             ctx.close();
