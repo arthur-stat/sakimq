@@ -3,7 +3,6 @@ package com.arth.sakimq.broker.core.impl;
 import com.arth.sakimq.broker.core.Broker;
 import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
-import com.arth.sakimq.network.config.DefaultNettyConfig;
 import com.arth.sakimq.network.netty.NettyServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,7 +25,7 @@ public class DefaultBroker implements Broker {
         this.port = nettyServer.getPort(); // Get port from the config
         log.info("DefaultBroker initialized with port: {}", this.port);
     }
-    
+
     // Constructor that accepts custom port for backward compatibility
     public DefaultBroker(int port) {
         // This constructor is for backward compatibility

@@ -1,11 +1,10 @@
 package com.arth.sakimq.clients.producer.impl;
 
-import com.arth.sakimq.clients.config.DefaultProducerConfig;
 import com.arth.sakimq.clients.config.ProducerConfig;
 import com.arth.sakimq.clients.producer.Producer;
-import com.arth.sakimq.network.config.NettyConfig;
+import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.netty.NettyClient;
-import com.arth.sakimq.network.config.DefaultNettyConfig;
+import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.Message;
 import com.arth.sakimq.protocol.MessagePack;
@@ -40,7 +39,7 @@ public class DefaultProducer implements Producer, AutoCloseable {
     }
 
     public DefaultProducer(String name) {
-        this(name, DefaultProducerConfig.getConfig(), DefaultNettyConfig.getConfig());
+        this(name, ProducerConfig.getConfig(), NettyConfig.getConfig());
     }
 
     public DefaultProducer(String name, ProducerConfig producerConfig, NettyConfig nettyConfig) {
@@ -48,6 +47,10 @@ public class DefaultProducer implements Producer, AutoCloseable {
         this.transportHandler = new DefaultProducerHandler();
         this.client = new NettyClient(name, this.transportHandler, nettyConfig);
         this.config = producerConfig;
+    }
+
+    public void addBroker(String host, int port) {
+        client.addBroker(host, port);
     }
 
     public void send(List<String> topics, Map<String, String> headers, ByteString body) {
@@ -72,7 +75,7 @@ public class DefaultProducer implements Producer, AutoCloseable {
                 .setMessagePack(messagePack)
                 .build();
 
-        attemptSend(transportMessage, ).join();
+        attemptSend(transportMessage, config.getMaxRetries()).join();
     }
 
     private CompletableFuture<Void> attemptSend(TransportMessage msg, int remainingAttempts) {
@@ -81,14 +84,14 @@ public class DefaultProducer implements Producer, AutoCloseable {
         pendingAcks.put(deliveryTag, ackFuture);
 
         return client.send(msg)
-                .thenCompose(v -> ackFuture.orTimeout(DefaultNettyConfig.timeout, TimeUnit.SECONDS))
+                .thenCompose(v -> ackFuture.orTimeout(config.getTimeout(), TimeUnit.MILLISECONDS))
                 .exceptionallyCompose(ex -> {
                     pendingAcks.remove(deliveryTag);
                     if (remainingAttempts > 1) {
                         log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, ex.getMessage());
                         return attemptSend(msg, remainingAttempts - 1);
                     } else {
-                        throw new RuntimeException("Failed to send message after " + DefaultNettyConfig.maxRetries + " attempts", ex);
+                        throw new UnavailableChannelException("Failed to send message after " + config.getMaxRetries() + " attempts", ex);
                     }
                 });
     }
@@ -138,7 +141,16 @@ public class DefaultProducer implements Producer, AutoCloseable {
             long deliveryTag = msg.getSeq();
             CompletableFuture<Void> future = pendingAcks.remove(deliveryTag);
             if (future != null) {
-                future.complete(null);
+                // Check if the ACK indicates success
+                if (msg.hasAck() && msg.getAck().getSuccess()) {
+                    future.complete(null);
+                } else {
+                    // If ACK indicates failure, complete the future exceptionally to trigger retry
+                    String errorMsg = msg.hasAck()
+                            ? msg.getAck().getErrorMessage() 
+                            : "Unknown error";
+                    future.completeExceptionally(new RuntimeException("Broker rejected message: " + errorMsg));
+                }
             }
         }
 
@@ -154,7 +166,7 @@ public class DefaultProducer implements Producer, AutoCloseable {
         public void onConnect(ChannelHandlerContext ctx) {
             TransportMessage connectMsg = TransportMessage.newBuilder()
                     .setType(MessageType.CONNECT)
-                    .setSeq(seq.incrementAndGet())
+                    .setSeq(0)  // Use fixed sequence number 0 for CONNECT message
                     .setTimestamp(System.currentTimeMillis())
                     .setConnect(com.arth.sakimq.protocol.ConnectPayload.newBuilder()
                             .setClientId(name)

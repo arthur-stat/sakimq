@@ -5,6 +5,8 @@ import io.netty.channel.ChannelHandlerContext;
 
 public interface BrokerProtocolHandler {
 
+    void dispatch(ChannelHandlerContext ctx, TransportMessage msg);
+
     void onSendMessage(ChannelHandlerContext ctx, TransportMessage msg);
 
     void onHandleMessage(ChannelHandlerContext ctx, TransportMessage msg);
@@ -17,5 +19,5 @@ public interface BrokerProtocolHandler {
 
     void onConnect(ChannelHandlerContext ctx, TransportMessage msg);
 
-    void onDisconnect(ChannelHandlerContext ctx);
+    void onDisconnect(ChannelHandlerContext ctx, TransportMessage msg);
 }

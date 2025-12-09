@@ -1,5 +1,7 @@
 # Under construction...
 
+Coming soon!
+
 # SakiMQ
 
 SakiMQ is a lightweight message queue system implemented in Java.
@@ -17,8 +19,8 @@ SakiMQ is a lightweight message queue system implemented in Java.
 - Multiple design patterns were applied. For example, use the builder pattern for the creation of Exchange.
 - At-least-once delivery is guaranteed through the ACK confirmation mechanism, while at-most-once delivery is ensured through idempotent processing between the Producer and the Broker.
 - Adopts RFC 1982 serial number arithmetic, ensuring correct and overflow-safe sequence comparison on a wrap-around 64-bit counter.
-- bootstrap.servers / NameServer
 
 # TO DO
 
 - Push model may be optional?
+- bootstrap.servers / NameServer

@@ -28,10 +28,10 @@ public class DisruptorQueue implements PullQueue {
     public DisruptorQueue(QueueConfig config) {
         this.disruptor = new Disruptor<>(
                 ReusableMessageEvent.FACTORY,
-                config.bufferSize,
+                config.getBufferSize(),
                 Executors.defaultThreadFactory(),
                 ProducerType.MULTI,
-                new TimeoutBlockingWaitStrategy(config.timeout, TimeUnit.MINUTES)
+                new TimeoutBlockingWaitStrategy(config.getTimeout(), TimeUnit.MINUTES)
         );
 
         this.ringBuffer = disruptor.start();
