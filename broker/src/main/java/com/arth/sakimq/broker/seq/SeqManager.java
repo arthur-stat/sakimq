@@ -9,7 +9,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 管理每个Producer客户端的序列号，用于确保消息的幂等性
+ * Manage the sequence number for each Producer client to ensure message idempotence.
+ * Hold by broker.
  */
 public class SeqManager {
 
@@ -20,28 +21,28 @@ public class SeqManager {
     }
 
     /**
-     * 检查消息是否是新消息（即序列号大于该客户端的最后处理序列号）
-     * 如果是新消息，则更新序列号并返回true
-     * 如果是重复消息或旧消息，则返回false
+     * Checks if a message is new (i.e., its sequence number is greater than the client's last processed sequence number).
+     * If it's a new message, updates the sequence number and returns true.
+     * If it's a duplicate or old message, returns false.
      *
-     * @param clientId 客户端ID
-     * @param seq      消息序列号
-     * @return 是否是新消息
+     * @param clientId Client ID
+     * @param seq      Message sequence number
+     * @return Whether the message is new
      */
     public boolean checkAndUpdateSeq(String clientId, long seq) {
-        // 获取或创建该客户端的序列号计数器
+        // Gets or creates the sequence number counter for this client
         AtomicLong lastSeq = producerSeqMap.computeIfAbsent(clientId, k -> new AtomicLong(0));
 
-        // 循环尝试更新序列号
+        // Loop attempting to update the sequence number
         long current;
         do {
             current = lastSeq.get();
-            // 如果消息序列号小于等于当前序列号（考虑溢出情况），说明是重复或旧消息
+            // Duplicate or old message if seq <= currentSeq (handles overflow)
             if (isSequenceLessThanOrEqualTo(seq, current)) {
                 log.debug("Duplicate message received from client {}: seq={} (last processed: {})", clientId, seq, current);
                 return false;
             }
-            // 尝试更新序列号为消息序列号
+            // Try updating sequence number to message's seq
         } while (!lastSeq.compareAndSet(current, seq));
 
         log.debug("Processed new message from client {}: seq={}", clientId, seq);
@@ -49,17 +50,16 @@ public class SeqManager {
     }
 
     /**
-     * RFC 1982 风格的序列号比较
-     * 适用于TCP序列号、版本号等
+     * Referring to RFC1982, compare sequence numbers under the wrap-around behavior of integer overflow.
      */
     private boolean isSequenceLessThanOrEqualTo(long seq, long current) {
-        return (current - seq) >= 0;
+        return Long.compareUnsigned(current - seq, 0x8000000000000000L) < 0;
     }
 
     /**
-     * 移除客户端的序列号记录
+     * Remove the client's sequence number record
      *
-     * @param clientId 客户端ID
+     * @param clientId Client ID
      */
     public void removeClient(String clientId) {
         producerSeqMap.remove(clientId);
@@ -67,9 +67,9 @@ public class SeqManager {
     }
 
     /**
-     * 注册新客户端
+     * Register a new client
      *
-     * @param clientId 客户端ID
+     * @param clientId Client ID
      */
     public void registerClient(String clientId) {
         producerSeqMap.computeIfAbsent(clientId, k -> new AtomicLong(-1));
@@ -77,10 +77,10 @@ public class SeqManager {
     }
 
     /**
-     * 获取客户端的当前序列号
+     * Get the current sequence number of the client
      *
-     * @param clientId 客户端ID
-     * @return 当前序列号，如果客户端不存在则返回-1
+     * @param clientId Client ID
+     * @return Current sequence number, returns -1 if the client does not exist
      */
     public long getCurrentSeq(String clientId) {
         AtomicLong lastSeq = producerSeqMap.get(clientId);

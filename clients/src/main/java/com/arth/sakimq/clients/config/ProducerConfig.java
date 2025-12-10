@@ -49,6 +49,6 @@ public class ProducerConfig {
     }
 
     public int getTimeout() {
-        return DEFAULT_TIMEOUT;
+        return timeout;
     }
 }

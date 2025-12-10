@@ -3,9 +3,9 @@ package com.arth.sakimq.clients.producer.impl;
 import com.arth.sakimq.clients.config.ProducerConfig;
 import com.arth.sakimq.clients.producer.Producer;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
+import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.network.netty.NettyClient;
 import com.arth.sakimq.network.config.NettyConfig;
-import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.protocol.Message;
 import com.arth.sakimq.protocol.MessagePack;
 import com.arth.sakimq.protocol.MessageType;
@@ -32,7 +32,6 @@ public class DefaultProducer implements Producer, AutoCloseable {
     private final ProducerConfig config;
     private final AtomicLong seq = new AtomicLong(0);
     private final ConcurrentMap<Long, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
-    private final DefaultProducerHandler transportHandler;
 
     public DefaultProducer() {
         this("Producer-" + UUID.randomUUID());
@@ -44,15 +43,17 @@ public class DefaultProducer implements Producer, AutoCloseable {
 
     public DefaultProducer(String name, ProducerConfig producerConfig, NettyConfig nettyConfig) {
         this.name = name;
-        this.transportHandler = new DefaultProducerHandler();
-        this.client = new NettyClient(name, this.transportHandler, nettyConfig);
+        this.client = new NettyClient(new DefaultProducerHandler(), nettyConfig);
         this.config = producerConfig;
     }
 
-    public void addBroker(String host, int port) {
-        client.addBroker(host, port);
+    @Override
+    public Producer addBroker(String host, int port) {
+        client.addConnection(host, port);
+        return this;
     }
 
+    @Override
     public void send(List<String> topics, Map<String, String> headers, ByteString body) {
         long messageId = seq.incrementAndGet();
 
@@ -85,21 +86,23 @@ public class DefaultProducer implements Producer, AutoCloseable {
 
         return client.send(msg)
                 .thenCompose(v -> ackFuture.orTimeout(config.getTimeout(), TimeUnit.MILLISECONDS))
-                .exceptionallyCompose(ex -> {
+                .exceptionallyCompose(e -> {
                     pendingAcks.remove(deliveryTag);
                     if (remainingAttempts > 1) {
-                        log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, ex.getMessage());
+                        log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, e.getMessage());
                         return attemptSend(msg, remainingAttempts - 1);
                     } else {
-                        throw new UnavailableChannelException("Failed to send message after " + config.getMaxRetries() + " attempts", ex);
+                        throw new UnavailableChannelException("Failed to send message after " + config.getMaxRetries() + " attempts", e);
                     }
                 });
     }
 
+    @Override
     public void start() throws Exception {
         client.start();
     }
 
+    @Override
     public void shutdown() throws Exception {
         client.shutdown();
     }
@@ -115,7 +118,6 @@ public class DefaultProducer implements Producer, AutoCloseable {
         public void dispatch(ChannelHandlerContext ctx, TransportMessage msg) {
             if (msg instanceof TransportMessage transportMsg) {
                 switch (transportMsg.getType()) {
-                    case MESSAGE -> onMessage(ctx, transportMsg);
                     case ACK -> onAck(ctx, transportMsg);
                     case HEARTBEAT -> onHeartbeat(ctx, transportMsg);
                     case DISCONNECT -> onDisconnect(ctx);
@@ -124,18 +126,12 @@ public class DefaultProducer implements Producer, AutoCloseable {
             }
         }
 
-        /**
-         * For producer, onMessage is called when sending messages to broker
-         */
         @Override
         public void onMessage(ChannelHandlerContext ctx, TransportMessage msg) {
             ctx.channel().writeAndFlush(msg);
             log.debug("Sent message from client: type={}, seq={}", msg.getType(), msg.getSeq());
         }
 
-        /**
-         * For producer, onAck is called when receiving ACKs from broker
-         */
         @Override
         public void onAck(ChannelHandlerContext ctx, TransportMessage msg) {
             long deliveryTag = msg.getSeq();
@@ -156,17 +152,14 @@ public class DefaultProducer implements Producer, AutoCloseable {
 
         @Override
         public void onHeartbeat(ChannelHandlerContext ctx, TransportMessage msg) {
-            // TODO
+            // TODO: Implement heartbeat handling
         }
 
-        /**
-         * For producer, onConnect is called when channel is active and sending CONNECT message
-         */
         @Override
         public void onConnect(ChannelHandlerContext ctx) {
             TransportMessage connectMsg = TransportMessage.newBuilder()
                     .setType(MessageType.CONNECT)
-                    .setSeq(0)  // Use fixed sequence number 0 for CONNECT message
+                    .setSeq(0)
                     .setTimestamp(System.currentTimeMillis())
                     .setConnect(com.arth.sakimq.protocol.ConnectPayload.newBuilder()
                             .setClientId(name)

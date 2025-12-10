@@ -4,7 +4,8 @@ import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.network.handler.BrokerProtocolHandler;
-import com.arth.sakimq.network.handler.ClientProtocolHandler;
+import com.arth.sakimq.network.netty.Connection;
+import com.arth.sakimq.network.netty.ConnectionManager;
 import com.arth.sakimq.protocol.*;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
@@ -30,54 +31,15 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER);
     private final TopicsManager topicsManager;
     private final SeqManager seqManager;
-    private final ConcurrentMap<Channel, String> channelToClientId = new ConcurrentHashMap<>();
-
     // ACK响应统计
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
-
-    // 连接状态监控
-    private final ConcurrentMap<String, ConnectionInfo> connectionInfoMap = new ConcurrentHashMap<>();
 
     // 心跳超时检测定时器
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
 
     // 心跳超时时间（毫秒）
     private static final long HEARTBEAT_TIMEOUT_MS = 60000; // 60秒
-
-    // 连接统计内部类
-    private static class ConnectionInfo {
-        private final String clientId;
-        private final Channel channel;
-        private volatile long lastHeartbeatTime;
-        private volatile long connectTime;
-        private volatile boolean isActive;
-
-        public ConnectionInfo(String clientId, Channel channel) {
-            this.clientId = clientId;
-            this.channel = channel;
-            this.lastHeartbeatTime = System.currentTimeMillis();
-            this.connectTime = System.currentTimeMillis();
-            this.isActive = true;
-        }
-
-        public void updateHeartbeat() {
-            this.lastHeartbeatTime = System.currentTimeMillis();
-        }
-
-        public boolean isHeartbeatTimeout() {
-            return System.currentTimeMillis() - lastHeartbeatTime > HEARTBEAT_TIMEOUT_MS;
-        }
-
-        public long getConnectionDuration() {
-            return System.currentTimeMillis() - connectTime;
-        }
-
-        @Override
-        public String toString() {
-            return String.format("ConnectionInfo{clientId=%s, active=%s, lastHeartbeat=%d, duration=%d}",
-                    clientId, isActive, lastHeartbeatTime, getConnectionDuration());
-        }
-    }
+    private final ConnectionManager connectionManager = ConnectionManager.getInstance();
 
     // ACK统计内部类
     private static class AckStats {
@@ -148,8 +110,8 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             Channel channel = ctx.channel();
 
             // Check if client is registered (has sent CONNECT message)
-            String clientId = channelToClientId.get(channel);
-            if (clientId == null) {
+            Connection connection = connectionManager.getConnection(channel);
+            if (connection == null) {
                 log.warn("Received message from unregistered client: {}", channel.remoteAddress());
                 // Send ACK anyway to avoid client hanging
                 sendAck(channel, msg, false, "Client not registered");
@@ -158,12 +120,13 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
 
             // Validate message format
             if (!isValidMessage(msg)) {
-                log.warn("Invalid message format from client {}: seq={}", clientId, msg.getSeq());
+                log.warn("Invalid message format from client {}: seq={}", connection.getClientId(), msg.getSeq());
                 sendAck(channel, msg, false, "Invalid message format");
                 return;
             }
 
             long msgSeq = msg.getSeq();
+            String clientId = connection.getClientId();
 
             // Determine if it is a duplicate message
             if (seqManager.checkAndUpdateSeq(clientId, msgSeq)) {
@@ -195,18 +158,15 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         Channel channel = ctx.channel();
 
         // 检查客户端是否已注册（已发送CONNECT消息）
-        String clientId = channelToClientId.get(channel);
-        if (clientId == null) {
+        Connection connection = connectionManager.getConnection(channel);
+        if (connection == null) {
             log.warn("Received heartbeat from unregistered client: {}", channel.remoteAddress());
             // 不发送心跳响应，因为客户端未注册
             return;
         }
 
         // 更新心跳时间
-        ConnectionInfo connectionInfo = connectionInfoMap.get(clientId);
-        if (connectionInfo != null) {
-            connectionInfo.updateHeartbeat();
-        }
+        connection.updateHeartbeat();
 
         // Respond with heartbeat ACK to keep connection alive
         TransportMessage heartbeatAck = TransportMessage.newBuilder()
@@ -223,27 +183,14 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         Channel channel = ctx.channel();
         
         try {
+            String clientId;
             // 如果消息为null或没有CONNECT负载，创建一个默认的客户端ID
             if (msg == null || !msg.hasConnect()) {
-                String clientId = "client-" + channel.id().asShortText();
-                
-                // Register client with generated ID
-                channelToClientId.put(channel, clientId);
-                seqManager.registerClient(clientId);
-
-                // 添加连接状态监控
-                ConnectionInfo connectionInfo = new ConnectionInfo(clientId, channel);
-                connectionInfoMap.put(clientId, connectionInfo);
-
-                // Send successful ACK
-                sendAck(channel, msg, true, null);
-
-                log.info("Connection established with auto-generated client ID {} from {}", clientId, channel.remoteAddress());
-                return;
+                clientId = "client-" + channel.id().asShortText();
+            } else {
+                // 处理正常的CONNECT消息
+                clientId = msg.getConnect().getClientId();
             }
-            
-            // 处理正常的CONNECT消息
-            String clientId = msg.getConnect().getClientId();
 
             // Validate client ID
             if (clientId == null || clientId.trim().isEmpty()) {
@@ -253,19 +200,17 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             }
 
             // Check if client already connected
-            if (channelToClientId.containsValue(clientId)) {
+            if (connectionManager.getConnection(clientId) != null) {
                 log.warn("Connection rejected: client {} already connected", clientId);
                 sendAck(channel, msg, false, "Client already connected");
                 return;
             }
 
             // Register client
-            channelToClientId.put(channel, clientId);
             seqManager.registerClient(clientId);
-
-            // 添加连接状态监控
-            ConnectionInfo connectionInfo = new ConnectionInfo(clientId, channel);
-            connectionInfoMap.put(clientId, connectionInfo);
+            
+            // 创建连接对象
+            connectionManager.createConnection(ctx, clientId);
 
             // Send successful ACK
             sendAck(channel, msg, true, null);
@@ -279,30 +224,23 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
 
     public void onDisconnect(ChannelHandlerContext ctx, TransportMessage msg) {
         Channel channel = ctx.channel();
-        String clientId = channelToClientId.remove(channel);
+        Connection connection = connectionManager.getConnection(channel);
 
-        if (clientId != null) {
+        if (connection != null) {
+            String clientId = connection.getClientId();
             seqManager.removeClient(clientId);
-
-            // 清理连接状态监控
-            ConnectionInfo connectionInfo = connectionInfoMap.remove(clientId);
-            if (connectionInfo != null) {
-                connectionInfo.isActive = false;
-                if (msg != null) {
-                    // Client sent DISCONNECT message
-                    log.info("Client {} disconnected gracefully, duration: {}ms",
-                            clientId, connectionInfo.getConnectionDuration());
-                } else {
-                    // Connection lost without DISCONNECT message
-                    log.info("Client {} connection lost, duration: {}ms",
-                            clientId, connectionInfo.getConnectionDuration());
-                }
+            
+            // 关闭连接
+            connectionManager.closeConnection(channel);
+            
+            if (msg != null) {
+                // Client sent DISCONNECT message
+                log.info("Client {} disconnected gracefully, duration: {}ms",
+                        clientId, connection.getConnectionDuration());
             } else {
-                if (msg != null) {
-                    log.info("Client {} disconnected gracefully", clientId);
-                } else {
-                    log.info("Client {} connection lost", clientId);
-                }
+                // Connection lost without DISCONNECT message
+                log.info("Client {} connection lost, duration: {}ms",
+                        clientId, connection.getConnectionDuration());
             }
         } else {
             if (msg != null) {
@@ -319,22 +257,16 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     // Server主动断开连接
     public void disconnectClient(Channel channel) {
         if (channel != null && channel.isActive()) {
-            // Send DISCONNECT message
-            TransportMessage disconnectMsg = TransportMessage.newBuilder()
-                    .setType(MessageType.DISCONNECT)
-                    .setTimestamp(System.currentTimeMillis())
-                    .build();
-
-            // Send message and close channel
-            channel.writeAndFlush(disconnectMsg).addListener(future -> {
-                if (future.isSuccess()) {
-                    log.info("Sent DISCONNECT to client {}", channel.remoteAddress());
-                } else {
-                    log.error("Failed to send DISCONNECT to client {}", channel.remoteAddress(), future.cause());
-                }
+            Connection connection = connectionManager.getConnection(channel);
+            if (connection != null) {
+                // Send DISCONNECT message
+                connection.sendDisconnect();
+                
                 // Close the channel
-                channel.close();
-            });
+                connection.close();
+                
+                log.info("Disconnected client {}", connection.getClientId());
+            }
         }
     }
 
@@ -353,10 +285,8 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         }
 
         // 获取客户端ID用于统计
-        String clientId = channelToClientId.get(channel);
-        if (clientId == null) {
-            clientId = "unknown";
-        }
+        Connection connection = connectionManager.getConnection(channel);
+        String clientId = connection != null ? connection.getClientId() : "unknown";
 
         // 获取或创建ACK统计对象
         AckStats stats = ackStatsMap.computeIfAbsent(clientId, k -> new AckStats());
@@ -481,34 +411,27 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
      * 检查心跳超时的连接
      */
     private void checkHeartbeatTimeout() {
-        List<String> timeoutClients = new ArrayList<>();
+        List<Connection> timeoutConnections = new ArrayList<>();
 
-        connectionInfoMap.forEach((clientId, connectionInfo) -> {
-            if (connectionInfo.isHeartbeatTimeout()) {
-                timeoutClients.add(clientId);
-            }
-        });
-
-        // 处理超时的连接
-        for (String clientId : timeoutClients) {
-            ConnectionInfo connectionInfo = connectionInfoMap.get(clientId);
-            if (connectionInfo != null) {
-                Channel channel = connectionInfo.channel;
-                log.warn("Client {} heartbeat timeout, closing connection", clientId);
-
-                // 标记连接为非活动状态
-                connectionInfo.isActive = false;
-
-                // 断开连接
-                disconnectClient(channel);
-
-                // 清理连接信息
-                connectionInfoMap.remove(clientId);
+        // 遍历所有连接，检查心跳超时
+        for (Connection connection : connectionManager.getAllConnections().values()) {
+            if (connection.isHeartbeatTimeout(HEARTBEAT_TIMEOUT_MS)) {
+                timeoutConnections.add(connection);
             }
         }
 
-        if (!timeoutClients.isEmpty()) {
-            log.info("Heartbeat timeout check completed, disconnected {} clients", timeoutClients.size());
+        // 处理超时的连接
+        for (Connection connection : timeoutConnections) {
+            String clientId = connection.getClientId();
+            Channel channel = connection.getChannel();
+            log.warn("Client {} heartbeat timeout, closing connection", clientId);
+
+            // 断开连接
+            disconnectClient(channel);
+        }
+
+        if (!timeoutConnections.isEmpty()) {
+            log.info("Heartbeat timeout check completed, disconnected {} clients", timeoutConnections.size());
         }
     }
 
@@ -530,16 +453,11 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         }
 
         // 断开所有客户端连接
-        List<String> clientIds = new ArrayList<>(connectionInfoMap.keySet());
-        for (String clientId : clientIds) {
-            ConnectionInfo connectionInfo = connectionInfoMap.get(clientId);
-            if (connectionInfo != null && connectionInfo.channel.isActive()) {
-                disconnectClient(connectionInfo.channel);
+        for (Connection connection : connectionManager.getAllConnections().values()) {
+            if (connection.isActive() && connection.getChannel().isActive()) {
+                disconnectClient(connection.getChannel());
             }
         }
-
-        // 清理连接信息
-        connectionInfoMap.clear();
 
         log.info("DefaultBrokerApplicationProtocolHandler shutdown completed");
     }
@@ -550,7 +468,8 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         Channel channel = ctx.channel();
-        String clientId = channelToClientId.get(channel);
+        Connection connection = connectionManager.getConnection(channel);
+        String clientId = connection != null ? connection.getClientId() : "unknown";
 
         if (cause instanceof java.io.IOException) {
             // 网络IO异常，通常是客户端断开连接
@@ -572,7 +491,8 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         if (evt instanceof IdleStateEvent) {
             IdleStateEvent event = (IdleStateEvent) evt;
             Channel channel = ctx.channel();
-            String clientId = channelToClientId.get(channel);
+            Connection connection = connectionManager.getConnection(channel);
+            String clientId = connection != null ? connection.getClientId() : "unknown";
 
             if (event.state() == IdleState.READER_IDLE) {
                 log.warn("Client {} idle for too long, closing connection", clientId);
@@ -597,21 +517,18 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         Channel channel = ctx.channel();
-        String clientId = channelToClientId.get(channel);
+        Connection connection = connectionManager.getConnection(channel);
 
-        if (clientId != null) {
+        if (connection != null) {
+            String clientId = connection.getClientId();
             log.info("Client {} connection inactive", clientId);
 
             // 清理连接信息
-            channelToClientId.remove(channel);
             seqManager.removeClient(clientId);
-
-            ConnectionInfo connectionInfo = connectionInfoMap.remove(clientId);
-            if (connectionInfo != null) {
-                connectionInfo.isActive = false;
-                log.info("Connection closed with client {}, duration: {}ms",
-                        clientId, connectionInfo.getConnectionDuration());
-            }
+            connectionManager.closeConnection(channel);
+            
+            log.info("Connection closed with client {}, duration: {}ms",
+                    clientId, connection.getConnectionDuration());
         }
 
         super.channelInactive(ctx);
@@ -622,8 +539,11 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
      */
     public Map<String, String> getConnectionStats() {
         Map<String, String> result = new HashMap<>();
-        connectionInfoMap.forEach((clientId, connectionInfo) -> {
-            result.put(clientId, connectionInfo.toString());
+        connectionManager.getAllConnections().forEach((channel, connection) -> {
+            String clientId = connection.getClientId();
+            String stats = String.format("Connection{clientId=%s, active=%s, lastHeartbeat=%d, duration=%d}",
+                    clientId, connection.isActive(), connection.getLastHeartbeatTime(), connection.getConnectionDuration());
+            result.put(clientId, stats);
         });
         return result;
     }
@@ -632,7 +552,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
      * 获取连接总数
      */
     public int getActiveConnectionCount() {
-        return (int) connectionInfoMap.values().stream().filter(info -> info.isActive).count();
+        return connectionManager.getConnectionCount();
     }
 
     /**

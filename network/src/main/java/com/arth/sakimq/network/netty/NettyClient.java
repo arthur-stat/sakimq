@@ -27,7 +27,6 @@ import java.util.stream.Collectors;
 public class NettyClient {
 
     private static final Logger log = LoggerFactory.getLogger(LoggerName.NETTY_CLIENT);
-    private final String clientName;
     private final ClientProtocolHandler handler;
     private final NettyConfig config;
     private final Map<InetSocketAddress, Channel> brokerChannels = new ConcurrentHashMap<>();
@@ -39,11 +38,9 @@ public class NettyClient {
     /**
      * Default constructor for NettyClient.
      *
-     * @param clientName the client name
-     * @param handler    the client protocol handler
+     * @param handler    the application protocol handler
      */
-    public NettyClient(String clientName, ClientProtocolHandler handler) {
-        this.clientName = clientName;
+    public NettyClient(ClientProtocolHandler handler) {
         this.handler = handler;
         this.config = NettyConfig.getConfig();
     }
@@ -51,70 +48,12 @@ public class NettyClient {
     /**
      * Constructor for NettyClient with custom config.
      *
-     * @param clientName the client name
-     * @param handler    the client protocol handler
+     * @param handler    the application protocol handler
      * @param config     custom netty config
      */
-    public NettyClient(String clientName, ClientProtocolHandler handler, NettyConfig config) {
-        this.clientName = clientName;
+    public NettyClient(ClientProtocolHandler handler, NettyConfig config) {
         this.handler = handler;
         this.config = config;
-    }
-
-    /**
-     * Constructor for NettyClient with a single broker.
-     *
-     * @param host       the broker host
-     * @param port       the broker port
-     * @param clientName the client name
-     * @param handler    the client protocol handler
-     */
-    public NettyClient(String host, int port, String clientName, ClientProtocolHandler handler) {
-        this.clientName = clientName;
-        this.handler = handler;
-        this.config = NettyConfig.getConfig();
-        this.addBroker(host, port);
-    }
-
-    /**
-     * Constructor for NettyClient with a single broker and custom config.
-     *
-     * @param host       the broker host
-     * @param port       the broker port
-     * @param clientName the client name
-     * @param handler    the client protocol handler
-     * @param config     custom netty config
-     */
-    public NettyClient(String host, int port, String clientName, ClientProtocolHandler handler, NettyConfig config) {
-        this.clientName = clientName;
-        this.handler = handler;
-        this.config = config;
-        this.addBroker(host, port);
-    }
-
-    /**
-     * Constructor for NettyClient with multiple brokers.
-     *
-     * @param brokers    list of broker addresses in format "host:port"
-     * @param clientName the client name
-     * @param handler    the client protocol handler
-     */
-    public NettyClient(List<String> brokers, String clientName, ClientProtocolHandler handler) {
-        this.clientName = clientName;
-        this.handler = handler;
-        this.config = NettyConfig.getConfig();
-        for (String broker : brokers) {
-            String[] parts = broker.split(":");
-            if (parts.length == 2) {
-                String host = parts[0];
-                int port = Integer.parseInt(parts[1]);
-                this.addBroker(host, port);
-            } else if (parts.length == 1) {
-                String host = parts[0];
-                int port = config.getPort();
-                this.addBroker(host, port);
-            }
-        }
     }
 
     /**
@@ -124,7 +63,7 @@ public class NettyClient {
      * @param port the broker port
      * @return this NettyClient for method chaining
      */
-    public NettyClient addBroker(String host, int port) {
+    public NettyClient addConnection(String host, int port) {
         InetSocketAddress address = new InetSocketAddress(host, port);
         synchronized (brokerAddresses) {
             if (!brokerAddresses.contains(address)) {
@@ -135,8 +74,15 @@ public class NettyClient {
         return this;
     }
 
-    public NettyClient addBroker(String host) {
-        return addBroker(host, config.getPort());
+    public NettyClient addConnection(String host) {
+        InetSocketAddress address = new InetSocketAddress(host, config.getPort());
+        synchronized (brokerAddresses) {
+            if (!brokerAddresses.contains(address)) {
+                brokerAddresses.add(address);
+                log.debug("Added broker: {}", address);
+            }
+        }
+        return this;
     }
 
     /**
@@ -164,7 +110,7 @@ public class NettyClient {
     }
 
     public void start() throws Exception {
-        // Once Netty 5 releases its official version, the factory here can be replaced with a virtual thread factory.
+        // Use virtual thread factory
         group = new MultiThreadIoEventLoopGroup(0, NioIoHandler.newFactory());
 
         // Connect to all brokers
