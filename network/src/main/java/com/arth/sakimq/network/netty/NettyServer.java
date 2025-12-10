@@ -3,8 +3,6 @@ package com.arth.sakimq.network.netty;
 import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.handler.BrokerProtocolHandler;
-import com.arth.sakimq.network.handler.ClientProtocolHandler;
-import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;

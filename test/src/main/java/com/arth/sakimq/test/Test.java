@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 public class Test {
+
     public static void main(String[] args) throws Exception {
         DefaultProducer producer = new DefaultProducer();
         producer.addBroker("localhost", 8080);
@@ -23,8 +24,10 @@ public class Test {
         broker.start();
         producer.start();
 
-        producer.send(List.of(), Map.of(), ByteString.copyFrom(new byte[0]));
-
+        for (int i = 0; i < 5; i++) {
+            producer.send(List.of(), Map.of(), ByteString.copyFrom(new byte[0]));
+            Thread.sleep(1000);
+        }
     }
 
     public static TransportMessage testTransportMessage() {
@@ -32,7 +35,7 @@ public class Test {
                 .setMessageId(1001)
                 .putHeaders("content-type", "application/json")
                 .putHeaders("correlation-id", "test-correlation-123")
-                .setBody(com.google.protobuf.ByteString.copyFromUtf8("{\"test\": \"data\"}"))
+                .setBody(ByteString.copyFromUtf8("{\"test\": \"data\"}"))
                 .setTimestamp(System.currentTimeMillis())
                 .build();
 
