@@ -140,7 +140,7 @@ public class DefaultProducer implements Producer, AutoCloseable {
                 } else {
                     // If ACK indicates failure, complete the future exceptionally to trigger retry
                     String errorMsg = msg.hasAck()
-                            ? msg.getAck().getErrorMessage() 
+                            ? msg.getAck().getErrorMessage()
                             : "Unknown error";
                     future.completeExceptionally(new RuntimeException("Broker rejected message: " + errorMsg));
                 }

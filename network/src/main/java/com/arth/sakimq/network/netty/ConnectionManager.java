@@ -9,7 +9,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 连接管理器，负责管理所有的连接对象
+ * Connection manager that tracks all active connections.
  */
 public class ConnectionManager {
     private static final ConnectionManager INSTANCE = new ConnectionManager();
@@ -21,24 +21,23 @@ public class ConnectionManager {
     }
 
     /**
-     * 获取连接管理器实例
-     * @return ConnectionManager实例
+     * @return singleton instance
      */
     public static ConnectionManager getInstance() {
         return INSTANCE;
     }
 
     /**
-     * 创建连接对象
-     * @param ctx ChannelHandlerContext
-     * @param clientId 客户端ID
-     * @return Connection对象
+     * Create and register a connection.
+     * @param ctx channel context
+     * @param clientId client identifier
+     * @return connection
      */
     public Connection createConnection(ChannelHandlerContext ctx, String clientId) {
         Channel channel = ctx.channel();
         Connection connection = new Connection(channel, clientId);
         
-        // 存储连接映射
+        // Store connection mappings
         channelToConnection.put(channel, connection);
         clientIdToConnection.put(clientId, connection);
         connectionCount.incrementAndGet();
@@ -47,26 +46,26 @@ public class ConnectionManager {
     }
 
     /**
-     * 根据Channel获取连接对象
-     * @param channel Channel对象
-     * @return Connection对象
+     * Get connection by channel.
+     * @param channel netty channel
+     * @return connection or null
      */
     public Connection getConnection(Channel channel) {
         return channelToConnection.get(channel);
     }
 
     /**
-     * 根据客户端ID获取连接对象
-     * @param clientId 客户端ID
-     * @return Connection对象
+     * Get connection by client id.
+     * @param clientId client identifier
+     * @return connection or null
      */
     public Connection getConnection(String clientId) {
         return clientIdToConnection.get(clientId);
     }
 
     /**
-     * 关闭连接
-     * @param channel Channel对象
+     * Close connection by channel.
+     * @param channel netty channel
      */
     public void closeConnection(Channel channel) {
         Connection connection = channelToConnection.remove(channel);
@@ -78,8 +77,8 @@ public class ConnectionManager {
     }
 
     /**
-     * 关闭连接
-     * @param clientId 客户端ID
+     * Close connection by client id.
+     * @param clientId client identifier
      */
     public void closeConnection(String clientId) {
         Connection connection = clientIdToConnection.remove(clientId);
@@ -91,16 +90,14 @@ public class ConnectionManager {
     }
 
     /**
-     * 获取活跃连接数量
-     * @return 活跃连接数量
+     * @return active connection count
      */
     public int getConnectionCount() {
         return connectionCount.get();
     }
 
     /**
-     * 获取所有连接
-     * @return 所有连接的Map
+     * @return map of channel to connection
      */
     public Map<Channel, Connection> getAllConnections() {
         return channelToConnection;

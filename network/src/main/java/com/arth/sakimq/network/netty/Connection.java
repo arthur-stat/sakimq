@@ -8,7 +8,7 @@ import io.netty.channel.ChannelFutureListener;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 连接对象，封装所有与连接相关的状态信息
+ * Connection wrapper that holds channel state and sequencing info.
  */
 public class Connection {
     private final Channel channel;
@@ -19,9 +19,9 @@ public class Connection {
     private final AtomicLong lastSeq;
 
     /**
-     * 创建连接对象
-     * @param channel Channel对象
-     * @param clientId 客户端ID
+     * Create a new connection wrapper.
+     * @param channel netty channel
+     * @param clientId client identifier
      */
     public Connection(Channel channel, String clientId) {
         this.channel = channel;
@@ -33,70 +33,70 @@ public class Connection {
     }
 
     /**
-     * 更新心跳时间
+     * Update the last heartbeat timestamp.
      */
     public void updateHeartbeat() {
         this.lastHeartbeatTime = System.currentTimeMillis();
     }
 
     /**
-     * 检查心跳是否超时
-     * @param timeoutMs 超时时间（毫秒）
-     * @return 是否超时
+     * Check if heartbeat timed out.
+     * @param timeoutMs timeout in millis
+     * @return true if timed out
      */
     public boolean isHeartbeatTimeout(long timeoutMs) {
         return System.currentTimeMillis() - lastHeartbeatTime > timeoutMs;
     }
 
     /**
-     * 获取连接持续时间
-     * @return 连接持续时间（毫秒）
+     * Duration since connection established.
+     * @return millis since connect
      */
     public long getConnectionDuration() {
         return System.currentTimeMillis() - connectTime;
     }
 
     /**
-     * 检查并更新序列号
-     * @param seq 消息序列号
-     * @return 是否是新消息
+     * Check and update last sequence.
+     * @param seq message sequence
+     * @return true if this seq is newer
      */
     public boolean checkAndUpdateSeq(long seq) {
         long current;
         do {
             current = lastSeq.get();
-            // 重复或旧消息，如果seq <= currentSeq（处理溢出）
+            // Duplicate or stale message if seq <= currentSeq (with overflow handling)
             if (isSequenceLessThanOrEqualTo(seq, current)) {
                 return false;
             }
-            // 尝试将序列号更新为消息的seq
+            // Try to advance the sequence to the incoming seq
         } while (!lastSeq.compareAndSet(current, seq));
         return true;
     }
 
     /**
-     * 根据RFC1982，在整数溢出的环绕行为下比较序列号
+     * Compare sequences per RFC1982 overflow semantics.
      */
     private boolean isSequenceLessThanOrEqualTo(long seq, long current) {
         return Long.compareUnsigned(current - seq, 0x8000000000000000L) < 0;
     }
 
     /**
-     * 发送消息
-     * @param msg 消息
+     * Send a transport message.
+     * @param msg transport message
      */
     public void send(TransportMessage msg) {
         if (channel != null && channel.isActive()) {
             channel.writeAndFlush(msg).addListener((ChannelFutureListener) future -> {
                 if (!future.isSuccess()) {
-                    // 记录发送失败
+                    // swallow send failure for now
                 }
             });
         }
     }
 
     /**
-     * 发送断开连接消息
+     * Send a DISCONNECT message.
      */
     public void sendDisconnect() {
         TransportMessage disconnectMsg = TransportMessage.newBuilder()
@@ -108,7 +108,7 @@ public class Connection {
     }
 
     /**
-     * 关闭连接
+     * Close the connection.
      */
     public void close() {
         isActive = false;

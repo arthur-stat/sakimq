@@ -65,7 +65,6 @@ public class MessageLogWriter implements AutoCloseable {
 
         Message message = pack.getMessage();
         List<String> topics = pack.getTopicsList();
-        int bodySize = message.hasBody() ? message.getBody().size() : 0;
         String topicsJoined = String.join(",", topics);
 
         // For prototype: only metadata and body length; body content is intentionally skipped even if includeBody=true.
@@ -77,7 +76,7 @@ public class MessageLogWriter implements AutoCloseable {
                 message.getMessageId(),
                 topicsJoined,
                 message.getHeadersCount(),
-                bodySize
+                message.getBody().size()
         );
 
         byte[] data = line.getBytes(StandardCharsets.UTF_8);

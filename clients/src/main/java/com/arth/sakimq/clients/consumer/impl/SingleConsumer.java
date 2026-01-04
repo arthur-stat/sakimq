@@ -46,17 +46,20 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
         this.config = consumerConfig;
     }
 
-    public SingleConsumer subscribe(List<String> topics) {
+    @Override
+    public ConsumerGroup subscribe(List<String> topics) {
         subscribedTopics.clear();
         subscribedTopics.addAll(topics);
         return this;
     }
 
-    public SingleConsumer onMessage(Consumer<MessagePack> listener) {
+    @Override
+    public ConsumerGroup onMessage(Consumer<MessagePack> listener) {
         this.messageListener = listener;
         return this;
     }
 
+    @Override
     public MessagePack pollLocal() {
         return inbox.poll();
     }

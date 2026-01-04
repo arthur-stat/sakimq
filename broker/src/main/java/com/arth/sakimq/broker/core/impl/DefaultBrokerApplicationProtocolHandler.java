@@ -31,15 +31,15 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private final SeqManager seqManager;
     private final BrokerConfig brokerConfig = BrokerConfig.getConfig();
     private final MessageLogWriter messageLogWriter;
-    // ACK响应统计
+    // ACK send statistics
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
 
-    // 心跳超时检测定时器
+    // Heartbeat timeout checker
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
 
     private final ConnectionManager connectionManager = ConnectionManager.getInstance();
 
-    // ACK统计内部类
+    // Internal ACK stats holder
     private static class AckStats {
         private volatile long totalSent = 0;
         private volatile long successSent = 0;
@@ -74,10 +74,10 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         this.seqManager = seqManager;
         this.messageLogWriter = initLogWriter();
 
-        // 启动心跳超时检测任务，每30秒检查一次
+        // Start heartbeat timeout checks every 30s
         heartbeatExecutor.scheduleAtFixedRate(this::checkHeartbeatTimeout, 30, 30, TimeUnit.SECONDS);
 
-        // 添加JVM关闭钩子，确保资源释放
+        // Add JVM shutdown hook to release resources
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
     }
 
@@ -210,15 +210,15 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     public void onHeartbeat(ChannelHandlerContext ctx, TransportMessage msg) {
         Channel channel = ctx.channel();
 
-        // 检查客户端是否已注册（已发送CONNECT消息）
+        // Ensure client is registered (sent CONNECT)
         Connection connection = connectionManager.getConnection(channel);
         if (connection == null) {
             log.warn("Received heartbeat from unregistered client: {}", channel.remoteAddress());
-            // 不发送心跳响应，因为客户端未注册
+            // Skip heartbeat response because client is not registered
             return;
         }
 
-        // 更新心跳时间
+        // Refresh heartbeat timestamp
         connection.updateHeartbeat();
 
         // Respond with heartbeat ACK to keep connection alive
@@ -237,11 +237,11 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         
         try {
             String clientId;
-            // 如果消息为null或没有CONNECT负载，创建一个默认的客户端ID
+            // If msg is null or lacks CONNECT payload, generate a default client id
             if (msg == null || !msg.hasConnect()) {
                 clientId = "client-" + channel.id().asShortText();
             } else {
-                // 处理正常的CONNECT消息
+                // Normal CONNECT payload, extract client id
                 clientId = msg.getConnect().getClientId();
             }
 
@@ -262,7 +262,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             // Register client
             seqManager.registerClient(clientId);
             
-            // 创建连接对象
+            // Create connection wrapper
             connectionManager.createConnection(ctx, clientId);
 
             // Send successful ACK
@@ -283,7 +283,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             String clientId = connection.getClientId();
             seqManager.removeClient(clientId);
             
-            // 关闭连接
+            // Close channel
             connectionManager.closeConnection(channel);
             
             if (msg != null) {
@@ -303,11 +303,10 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             }
         }
         
-        // 不再发送ACK响应，因为连接已经关闭
-        // 如果需要，可以在这里添加其他清理逻辑
+        // Skip ACK because connection is closed; add more cleanup here if needed
     }
 
-    // Server主动断开连接
+    // Server-initiated disconnect
     public void disconnectClient(Channel channel) {
         if (channel != null && channel.isActive()) {
             Connection connection = connectionManager.getConnection(channel);
@@ -335,7 +334,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 发送ACK响应，带有重试机制
+     * Send ACK with retry.
      */
     private void sendAckWithRetry(Channel channel, TransportMessage originalMsg, boolean success, String errorMessage, int retryCount) {
         if (channel == null || !channel.isActive()) {
@@ -344,14 +343,14 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             return;
         }
 
-        // 获取客户端ID用于统计
+        // Client id for stats
         Connection connection = connectionManager.getConnection(channel);
         String clientId = connection != null ? connection.getClientId() : "unknown";
 
-        // 获取或创建ACK统计对象
+        // Get or create ACK stats holder
         AckStats stats = ackStatsMap.computeIfAbsent(clientId, k -> new AckStats());
 
-        // 处理null的originalMsg，使用默认值
+        // Handle null originalMsg with default seq
         long seq = (originalMsg != null) ? originalMsg.getSeq() : 0;
         
         AckPayload.Builder ackBuilder = AckPayload.newBuilder()
@@ -369,7 +368,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 .setAck(ackBuilder.build())
                 .build();
 
-        // 异步发送ACK
+        // Async send ACK
         channel.writeAndFlush(ackMsg).addListener((ChannelFutureListener) future -> {
             if (future.isSuccess()) {
                 log.debug("Sent ACK to client {} for msg seq={}, success={}",
@@ -379,10 +378,10 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 log.error("Failed to send ACK to client {} for msg seq={}, retryCount={}",
                         channel.remoteAddress(), seq, retryCount, future.cause());
 
-                // 重试逻辑，最多重试2次
+                // Retry until max attempts
                 if (retryCount < brokerConfig.getAckMaxRetries()) {
                     stats.recordRetry();
-                    // 延迟重试
+                    // Backoff before retry
                     channel.eventLoop().schedule(() -> {
                         sendAckWithRetry(channel, originalMsg, success, errorMessage, retryCount + 1);
                     }, brokerConfig.getAckRetryDelayMs() * (retryCount + 1), TimeUnit.MILLISECONDS);
@@ -443,7 +442,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 获取ACK统计信息
+     * Get ACK stats snapshot.
      */
     public Map<String, String> getAckStats() {
         Map<String, String> result = new HashMap<>();
@@ -454,7 +453,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 重置ACK统计信息
+     * Reset ACK stats.
      */
     public void resetAckStats() {
         ackStatsMap.clear();
@@ -462,19 +461,19 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 获取指定客户端的ACK统计信息
+     * Get ACK stats for a single client.
      */
     public AckStats getClientAckStats(String clientId) {
         return ackStatsMap.get(clientId);
     }
 
     /**
-     * 检查心跳超时的连接
+     * Check connections that exceeded heartbeat timeout.
      */
     private void checkHeartbeatTimeout() {
         List<Connection> timeoutConnections = new ArrayList<>();
 
-        // 遍历所有连接，检查心跳超时
+        // Scan all connections for heartbeat timeout
         long timeoutMs = brokerConfig.getHeartbeatTimeoutMs();
         for (Connection connection : connectionManager.getAllConnections().values()) {
             if (connection.isHeartbeatTimeout(timeoutMs)) {
@@ -482,13 +481,13 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             }
         }
 
-        // 处理超时的连接
+        // Disconnect timed-out connections
         for (Connection connection : timeoutConnections) {
             String clientId = connection.getClientId();
             Channel channel = connection.getChannel();
             log.warn("Client {} heartbeat timeout, closing connection", clientId);
 
-            // 断开连接
+            // Close connection
             disconnectClient(channel);
         }
 
@@ -498,12 +497,12 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 关闭资源
+     * Close resources.
      */
     public void shutdown() {
         log.info("Shutting down DefaultBrokerApplicationProtocolHandler");
 
-        // 关闭心跳检测定时器
+        // Stop heartbeat scheduler
         heartbeatExecutor.shutdown();
         try {
             if (!heartbeatExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
@@ -522,7 +521,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             }
         }
 
-        // 断开所有客户端连接
+        // Disconnect all clients
         for (Connection connection : connectionManager.getAllConnections().values()) {
             if (connection.isActive() && connection.getChannel().isActive()) {
                 disconnectClient(connection.getChannel());
@@ -533,7 +532,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 处理连接异常
+     * Handle channel exceptions.
      */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
@@ -542,19 +541,19 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         String clientId = connection != null ? connection.getClientId() : "unknown";
 
         if (cause instanceof java.io.IOException) {
-            // 网络IO异常，通常是客户端断开连接
+            // Network IO usually means client disconnected
             log.info("Network exception with client {}: {}", clientId, cause.getMessage());
         } else {
-            // 其他异常
+            // Other exceptions
             log.error("Exception with client {}: ", clientId, cause);
         }
 
-        // 关闭连接
+        // Close channel
         ctx.close();
     }
 
     /**
-     * 处理连接空闲事件
+     * Handle idle events.
      */
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
@@ -569,7 +568,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 ctx.close();
             } else if (event.state() == IdleState.WRITER_IDLE) {
                 log.debug("Client {} writer idle, sending heartbeat", clientId);
-                // 发送心跳
+                // Send heartbeat
                 TransportMessage heartbeatMsg = TransportMessage.newBuilder()
                         .setType(MessageType.HEARTBEAT)
                         .setTimestamp(System.currentTimeMillis())
@@ -582,7 +581,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 处理连接关闭事件
+     * Handle channel inactive.
      */
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
@@ -593,7 +592,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             String clientId = connection.getClientId();
             log.info("Client {} connection inactive", clientId);
 
-            // 清理连接信息
+            // Cleanup connection info
             seqManager.removeClient(clientId);
             connectionManager.closeConnection(channel);
             
@@ -605,7 +604,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 获取连接统计信息
+     * Get connection stats summary.
      */
     public Map<String, String> getConnectionStats() {
         Map<String, String> result = new HashMap<>();
@@ -619,14 +618,14 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     /**
-     * 获取连接总数
+     * @return active connection count
      */
     public int getActiveConnectionCount() {
         return connectionManager.getConnectionCount();
     }
 
     /**
-     * 获取所有ACK统计的总览
+     * Get aggregate ACK stats summary.
      */
     public String getAckStatsSummary() {
         long totalSent = ackStatsMap.values().stream().mapToLong(s -> s.totalSent).sum();

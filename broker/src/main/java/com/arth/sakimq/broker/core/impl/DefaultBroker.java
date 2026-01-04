@@ -42,7 +42,8 @@ public class DefaultBroker implements Broker {
         log.info("Broker initialized with custom port: {}", this.port);
     }
 
-    public CompletableFuture<Void> start() throws InterruptedException {
+    @Override
+    public CompletableFuture<Void> start() {
         if (!active) {
             synchronized (this) {
                 if (!active) {
@@ -65,18 +66,22 @@ public class DefaultBroker implements Broker {
         }
     }
 
+    @Override
     public CompletableFuture<Void> shutdown() {
         return server.shutdown();
     }
 
+    @Override
     public int getPort() {
         return port;
     }
 
+    @Override
     public TopicsManager getTopicsManager() {
         return topicsManager;
     }
 
+    @Override
     public NettyServer getNettyServer() {
         return server;
     }
