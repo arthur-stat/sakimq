@@ -1,5 +1,6 @@
 package com.arth.sakimq.broker.core.impl;
 
+import com.arth.sakimq.broker.config.BrokerConfig;
 import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.common.constant.LoggerName;
@@ -27,14 +28,13 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER);
     private final TopicsManager topicsManager;
     private final SeqManager seqManager;
+    private final BrokerConfig brokerConfig = BrokerConfig.getConfig();
     // ACK响应统计
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
 
     // 心跳超时检测定时器
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
 
-    // 心跳超时时间（毫秒）
-    private static final long HEARTBEAT_TIMEOUT_MS = 60000; // 60秒
     private final ConnectionManager connectionManager = ConnectionManager.getInstance();
 
     // ACK统计内部类
@@ -352,15 +352,16 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                         channel.remoteAddress(), seq, retryCount, future.cause());
 
                 // 重试逻辑，最多重试2次
-                if (retryCount < 2) {
+                if (retryCount < brokerConfig.getAckMaxRetries()) {
                     stats.recordRetry();
                     // 延迟重试
                     channel.eventLoop().schedule(() -> {
                         sendAckWithRetry(channel, originalMsg, success, errorMessage, retryCount + 1);
-                    }, 100 * (retryCount + 1), TimeUnit.MILLISECONDS);
+                    }, brokerConfig.getAckRetryDelayMs() * (retryCount + 1), TimeUnit.MILLISECONDS);
                 } else {
-                    log.error("Failed to send ACK after 3 attempts to client {} for msg seq={}",
-                            channel.remoteAddress(), seq);
+                    int attempts = brokerConfig.getAckMaxRetries() + 1;
+                    log.error("Failed to send ACK after {} attempts to client {} for msg seq={}",
+                            attempts, channel.remoteAddress(), seq);
                     stats.recordFailure();
                 }
             }
@@ -446,8 +447,9 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         List<Connection> timeoutConnections = new ArrayList<>();
 
         // 遍历所有连接，检查心跳超时
+        long timeoutMs = brokerConfig.getHeartbeatTimeoutMs();
         for (Connection connection : connectionManager.getAllConnections().values()) {
-            if (connection.isHeartbeatTimeout(HEARTBEAT_TIMEOUT_MS)) {
+            if (connection.isHeartbeatTimeout(timeoutMs)) {
                 timeoutConnections.add(connection);
             }
         }

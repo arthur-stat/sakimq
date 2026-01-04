@@ -100,4 +100,24 @@ public class YamlParser {
         }
         return defaultValue;
     }
+
+    /**
+     * Get a long value from the config map, with a default fallback
+     *
+     * @param configMap    Config map
+     * @param key          Config key
+     * @param defaultValue Default value if key not found or invalid
+     * @return Long value or default
+     */
+    public static long getLongValue(Map<String, String> configMap, String key, long defaultValue) {
+        String value = configMap.get(key);
+        if (value != null) {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                // Ignore invalid number format, return default
+            }
+        }
+        return defaultValue;
+    }
 }

@@ -1,0 +1,4 @@
+# Broker configuration
+heartbeatTimeoutMs: 60000
+ackMaxRetries: 2
+ackRetryDelayMs: 100
