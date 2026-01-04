@@ -10,7 +10,7 @@ SakiMQ is a lightweight message queue system implemented in Java.
 
 > Why is this project named SakiMQ? 'cause I stan [Tenma Saki](https://pjsekai.sega.jp/character/unite01/saki/index.html)!
 
-# Implemented Features
+# Implementation Details
 
 - Publish-Subscribe Pattern & Observer Pattern & Pull Model.
 - The explicit queue leverages Disruptor with its zero-copy capability, a design approach more akin to that of RocketMQ.
@@ -24,3 +24,7 @@ SakiMQ is a lightweight message queue system implemented in Java.
 
 - Push model may be optional?
 - bootstrap.servers / NameServer
+- Load balancing
+- Heartbeat
+- Auto-sharding
+- Consumer group (multiple consumers within one group)

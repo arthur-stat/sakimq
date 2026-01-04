@@ -1,9 +1,7 @@
 package com.arth.sakimq.test;
 
 import com.arth.sakimq.broker.core.impl.DefaultBroker;
-import com.arth.sakimq.clients.producer.Producer;
 import com.arth.sakimq.clients.producer.impl.DefaultProducer;
-import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.protocol.Message;
 import com.arth.sakimq.protocol.MessagePack;
 import com.arth.sakimq.protocol.MessageType;
@@ -13,7 +11,7 @@ import com.google.protobuf.ByteString;
 import java.util.List;
 import java.util.Map;
 
-public class Test {
+public class ProducerToBroker {
 
     public static void main(String[] args) throws Exception {
         DefaultProducer producer = new DefaultProducer();

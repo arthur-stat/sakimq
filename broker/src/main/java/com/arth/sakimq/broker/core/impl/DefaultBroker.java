@@ -3,10 +3,12 @@ package com.arth.sakimq.broker.core.impl;
 import com.arth.sakimq.broker.core.Broker;
 import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
+import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.netty.NettyServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultBroker implements Broker {
@@ -14,34 +16,57 @@ public class DefaultBroker implements Broker {
     private static final Logger log = LoggerFactory.getLogger(DefaultBroker.class);
 
     private final int port;
+    private final String name;
     private final TopicsManager topicsManager;
     private final SeqManager sessionManager;
-    private final NettyServer nettyServer;
+    private final NettyServer server;
+    private volatile boolean active = false;
 
-    // Default constructor that uses the default config
     public DefaultBroker() {
-        // Initialize with the default NettyConfig (which loads from config/network.yml)
-        this.nettyServer = new NettyServer(new DefaultBrokerApplicationProtocolHandler(topicsManager = new TopicsManager(), sessionManager = new SeqManager()));
-        this.port = nettyServer.getPort(); // Get port from the config
-        log.info("DefaultBroker initialized with port: {}", this.port);
+        this.name = "Broker-" + UUID.randomUUID();
+        this.server = new NettyServer(new DefaultBrokerApplicationProtocolHandler(topicsManager = new TopicsManager(), sessionManager = new SeqManager()));
+        this.port = server.getPort();
+        log.info("Broker initialized with custom port: {}", this.port);
     }
 
-    // Constructor that accepts custom port for backward compatibility
     public DefaultBroker(int port) {
-        // This constructor is for backward compatibility
+        this(port, "Broker-" + UUID.randomUUID());
+    }
+
+    public DefaultBroker(int port, String name) {
         this.port = port;
+        this.name = name;
         this.topicsManager = new TopicsManager();
         this.sessionManager = new SeqManager();
-        this.nettyServer = new NettyServer(port, new DefaultBrokerApplicationProtocolHandler(topicsManager, sessionManager));
-        log.info("DefaultBroker initialized with custom port: {}", this.port);
+        this.server = new NettyServer(port, new DefaultBrokerApplicationProtocolHandler(topicsManager, sessionManager));
+        log.info("Broker initialized with custom port: {}", this.port);
     }
 
     public CompletableFuture<Void> start() throws InterruptedException {
-        return nettyServer.start();
+        if (!active) {
+            synchronized (this) {
+                if (!active) {
+                    try {
+                        CompletableFuture<Void> future = server.start();
+                        active = true;
+                        log.info("Broker {} started successfully.", name);
+                        return future;
+                    } catch (Exception e) {
+                        log.error("Failed to start broker {}: {}", name, e.getMessage());
+                        throw new UnavailableChannelException("Failed to start broker", e);
+                    }
+                } else {
+                    return null;
+                }
+            }
+        } else {
+            log.warn("Consumer {} is already started.", name);
+            return null;
+        }
     }
 
     public CompletableFuture<Void> shutdown() {
-        return nettyServer.shutdown();
+        return server.shutdown();
     }
 
     public int getPort() {
@@ -53,6 +78,6 @@ public class DefaultBroker implements Broker {
     }
 
     public NettyServer getNettyServer() {
-        return nettyServer;
+        return server;
     }
 }
