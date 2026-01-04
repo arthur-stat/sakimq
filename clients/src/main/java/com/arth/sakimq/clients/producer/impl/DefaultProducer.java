@@ -6,10 +6,7 @@ import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
 import com.arth.sakimq.network.netty.NettyClient;
 import com.arth.sakimq.network.config.NettyConfig;
-import com.arth.sakimq.protocol.Message;
-import com.arth.sakimq.protocol.MessagePack;
-import com.arth.sakimq.protocol.MessageType;
-import com.arth.sakimq.protocol.TransportMessage;
+import com.arth.sakimq.protocol.*;
 import com.google.protobuf.ByteString;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
@@ -161,7 +158,7 @@ public class DefaultProducer implements Producer, AutoCloseable {
                     .setType(MessageType.CONNECT)
                     .setSeq(0)
                     .setTimestamp(System.currentTimeMillis())
-                    .setConnect(com.arth.sakimq.protocol.ConnectPayload.newBuilder()
+                    .setConnect(ConnectPayload.newBuilder()
                             .setClientId(name)
                             .setUsername("")
                             .setPassword("")

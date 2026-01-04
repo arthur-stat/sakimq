@@ -21,10 +21,14 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandlerAdapter implements BrokerProtocolHandler {
 
@@ -33,6 +37,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private final SeqManager seqManager;
     // ACK响应统计
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
+    private final Queue<MessagePack> pendingMessages = new ConcurrentLinkedQueue<>();
 
     // 心跳超时检测定时器
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -92,6 +97,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 case HEARTBEAT -> onHeartbeat(ctx, msg);
                 case CONNECT -> onConnect(ctx, msg);
                 case DISCONNECT -> onDisconnect(ctx, msg);
+                case POLL_REQUEST -> onPoll(ctx, msg);
                 default -> log.warn("Received unknown message type: {}", msg.getType());
             }
         } catch (Exception e) {
@@ -131,7 +137,9 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             // Determine if it is a duplicate message
             if (seqManager.checkAndUpdateSeq(clientId, msgSeq)) {
                 // If it is a new message, publish it to the topic
-                topicsManager.publish(msg.getMessagePack());
+                MessagePack messagePack = msg.getMessagePack();
+                topicsManager.publish(messagePack);
+                pendingMessages.offer(messagePack);
                 log.debug("Processed message from client {}: seq={}", clientId, msgSeq);
             } else {
                 // If it is a duplicate message, Respond with ACK directly
@@ -152,6 +160,33 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
 
     public void onHandleAck(ChannelHandlerContext ctx, TransportMessage msg) {
         // Server doesn't dispatch ACK messages from clients
+    }
+
+    public void onPoll(ChannelHandlerContext ctx, TransportMessage msg) {
+        Channel channel = ctx.channel();
+
+        // Ensure client is registered
+        Connection connection = connectionManager.getConnection(channel);
+        if (connection == null) {
+            log.warn("Received poll from unregistered client: {}", channel.remoteAddress());
+            sendAck(channel, msg, false, "Client not registered");
+            return;
+        }
+
+        connection.updateHeartbeat();
+
+        MessagePack next = fetchNextMessage(msg);
+
+        TransportMessage.Builder builder = TransportMessage.newBuilder()
+                .setType(MessageType.POLL_RESPONSE)
+                .setSeq(msg != null ? msg.getSeq() : 0)
+                .setTimestamp(System.currentTimeMillis());
+
+        if (next != null) {
+            builder.setMessagePack(next);
+        }
+
+        channel.writeAndFlush(builder.build());
     }
 
     public void onHeartbeat(ChannelHandlerContext ctx, TransportMessage msg) {
@@ -268,6 +303,31 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 log.info("Disconnected client {}", connection.getClientId());
             }
         }
+    }
+
+    private MessagePack fetchNextMessage(TransportMessage request) {
+        if (pendingMessages.isEmpty()) {
+            return null;
+        }
+
+        List<String> requestedTopics = (request != null && request.hasPollRequest())
+                ? request.getPollRequest().getTopicsList()
+                : List.of();
+
+        if (requestedTopics.isEmpty()) {
+            return pendingMessages.poll();
+        }
+
+        Set<String> targetTopics = new HashSet<>(requestedTopics);
+        for (MessagePack candidate : pendingMessages) {
+            if (candidate.getTopicsList().isEmpty() ||
+                    candidate.getTopicsList().stream().anyMatch(targetTopics::contains)) {
+                if (pendingMessages.remove(candidate)) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
     }
 
     private void sendAck(Channel channel, TransportMessage originalMsg, boolean success, String errorMessage) {
