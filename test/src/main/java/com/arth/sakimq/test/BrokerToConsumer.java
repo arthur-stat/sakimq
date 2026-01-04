@@ -1,7 +1,6 @@
 package com.arth.sakimq.test;
 
 import com.arth.sakimq.broker.core.impl.DefaultBroker;
-import com.arth.sakimq.clients.consumer.ConsumerGroup;
 import com.arth.sakimq.clients.consumer.impl.SingleConsumer;
 import com.arth.sakimq.clients.producer.impl.DefaultProducer;
 import com.google.protobuf.ByteString;

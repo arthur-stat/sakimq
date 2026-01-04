@@ -2,7 +2,7 @@ package com.arth.sakimq.broker.queue;
 
 import com.arth.sakimq.broker.config.QueueConfig;
 import com.arth.sakimq.common.constant.LoggerName;
-import com.arth.sakimq.protocol.Message;
+import com.arth.sakimq.protocol.MessagePack;
 import com.lmax.disruptor.*;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
@@ -47,7 +47,7 @@ public class DisruptorQueue implements PullQueue {
      * Producer appends message to queue
      */
     @Override
-    public boolean append(Message message) {
+    public boolean append(MessagePack message) {
         try {
             long seq = ringBuffer.tryNext();
             try {
@@ -64,7 +64,7 @@ public class DisruptorQueue implements PullQueue {
     }
 
     @Override
-    public void appendBlocking(Message message) {
+    public void appendBlocking(MessagePack message) {
         long seq = ringBuffer.next();
         try {
             ReusableMessageEvent event = ringBuffer.get(seq);
@@ -78,25 +78,25 @@ public class DisruptorQueue implements PullQueue {
      * Non-blocking poll
      */
     @Override
-    public Message poll() {
+    public MessagePack poll() {
         long nextSeq = consumerSequence.get() + 1;
         if (nextSeq > ringBuffer.getCursor()) return null;
         ReusableMessageEvent event = ringBuffer.get(nextSeq);
         consumerSequence.set(nextSeq);
-        return event.getMessage();
+        return event.getMessagePack();
     }
 
     /**
      * Blocking take
      */
     @Override
-    public Message take() {
+    public MessagePack take() {
         try {
             long nextSeq = consumerSequence.get() + 1;
             long availableSeq = barrier.waitFor(nextSeq);
             ReusableMessageEvent event = ringBuffer.get(nextSeq);
             consumerSequence.set(nextSeq);
-            return event.getMessage();
+            return event.getMessagePack();
         } catch (AlertException | InterruptedException e) {
             log.warn("Disruptor queue take interrupted");
             Thread.currentThread().interrupt();

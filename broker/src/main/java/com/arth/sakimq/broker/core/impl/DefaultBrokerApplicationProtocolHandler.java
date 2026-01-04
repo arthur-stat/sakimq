@@ -1,8 +1,8 @@
 package com.arth.sakimq.broker.core.impl;
 
 import com.arth.sakimq.broker.seq.SeqManager;
-import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.broker.topic.TopicsManager;
+import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.network.handler.BrokerProtocolHandler;
 import com.arth.sakimq.network.netty.Connection;
 import com.arth.sakimq.network.netty.ConnectionManager;
@@ -16,19 +16,11 @@ import io.netty.handler.timeout.IdleStateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.Executors;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
 
 public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandlerAdapter implements BrokerProtocolHandler {
 
@@ -37,7 +29,6 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private final SeqManager seqManager;
     // ACK响应统计
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
-    private final Queue<MessagePack> pendingMessages = new ConcurrentLinkedQueue<>();
 
     // 心跳超时检测定时器
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -139,7 +130,6 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 // If it is a new message, publish it to the topic
                 MessagePack messagePack = msg.getMessagePack();
                 topicsManager.publish(messagePack);
-                pendingMessages.offer(messagePack);
                 log.debug("Processed message from client {}: seq={}", clientId, msgSeq);
             } else {
                 // If it is a duplicate message, Respond with ACK directly
@@ -306,28 +296,10 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     }
 
     private MessagePack fetchNextMessage(TransportMessage request) {
-        if (pendingMessages.isEmpty()) {
-            return null;
-        }
-
         List<String> requestedTopics = (request != null && request.hasPollRequest())
                 ? request.getPollRequest().getTopicsList()
                 : List.of();
-
-        if (requestedTopics.isEmpty()) {
-            return pendingMessages.poll();
-        }
-
-        Set<String> targetTopics = new HashSet<>(requestedTopics);
-        for (MessagePack candidate : pendingMessages) {
-            if (candidate.getTopicsList().isEmpty() ||
-                    candidate.getTopicsList().stream().anyMatch(targetTopics::contains)) {
-                if (pendingMessages.remove(candidate)) {
-                    return candidate;
-                }
-            }
-        }
-        return null;
+        return topicsManager.poll(requestedTopics);
     }
 
     private void sendAck(Channel channel, TransportMessage originalMsg, boolean success, String errorMessage) {

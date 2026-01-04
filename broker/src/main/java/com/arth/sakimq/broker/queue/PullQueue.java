@@ -1,19 +1,19 @@
 package com.arth.sakimq.broker.queue;
 
 
-import com.arth.sakimq.protocol.Message;
+import com.arth.sakimq.protocol.MessagePack;
 
 public interface PullQueue {
 
     void setQueueId(int queueId);
 
-    boolean append(Message message);
+    boolean append(MessagePack message);
 
-    void appendBlocking(Message message);
+    void appendBlocking(MessagePack message);
 
-    Message poll();
+    MessagePack poll();
 
-    Message take();
+    MessagePack take();
 
     boolean isFull();
 
