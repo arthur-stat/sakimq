@@ -28,3 +28,4 @@ SakiMQ is a lightweight message queue system implemented in Java.
 - Heartbeat
 - Auto-sharding
 - Consumer group (multiple consumers within one group)
+- Message log content persistence (currently only metadata + body length is logged even when message logging is enabled)

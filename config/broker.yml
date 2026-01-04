@@ -2,3 +2,7 @@
 heartbeatTimeoutMs: 60000
 ackMaxRetries: 2
 ackRetryDelayMs: 100
+messageLogEnabled: false
+messageLogMaxBytes: 10485760  # 10 MB
+messageLogDir: logs
+messageLogIncludeBody: false

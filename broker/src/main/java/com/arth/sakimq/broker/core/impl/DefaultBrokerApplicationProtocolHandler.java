@@ -1,6 +1,7 @@
 package com.arth.sakimq.broker.core.impl;
 
 import com.arth.sakimq.broker.config.BrokerConfig;
+import com.arth.sakimq.broker.log.MessageLogWriter;
 import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.common.constant.LoggerName;
@@ -29,6 +30,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     private final TopicsManager topicsManager;
     private final SeqManager seqManager;
     private final BrokerConfig brokerConfig = BrokerConfig.getConfig();
+    private final MessageLogWriter messageLogWriter;
     // ACK响应统计
     private final ConcurrentMap<String, AckStats> ackStatsMap = new ConcurrentHashMap<>();
 
@@ -70,12 +72,27 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
     public DefaultBrokerApplicationProtocolHandler(TopicsManager topicsManager, SeqManager seqManager) {
         this.topicsManager = topicsManager;
         this.seqManager = seqManager;
+        this.messageLogWriter = initLogWriter();
 
         // 启动心跳超时检测任务，每30秒检查一次
         heartbeatExecutor.scheduleAtFixedRate(this::checkHeartbeatTimeout, 30, 30, TimeUnit.SECONDS);
 
         // 添加JVM关闭钩子，确保资源释放
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
+    }
+
+    private MessageLogWriter initLogWriter() {
+        if (!brokerConfig.isMessageLogEnabled()) {
+            return null;
+        }
+        try {
+            return new MessageLogWriter(
+                    brokerConfig.getMessageLogDir(),
+                    brokerConfig.getMessageLogMaxBytes(),
+                    brokerConfig.isMessageLogIncludeBody());
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize message log writer", e);
+        }
     }
 
     @Override
@@ -129,6 +146,17 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
             if (seqManager.checkAndUpdateSeq(clientId, msgSeq)) {
                 // If it is a new message, publish it to the topic
                 MessagePack messagePack = msg.getMessagePack();
+
+                if (messageLogWriter != null) {
+                    try {
+                        messageLogWriter.append(messagePack, clientId, msgSeq);
+                    } catch (Exception e) {
+                        log.error("Persist message to log failed, rejecting message seq {} from {}: {}", msgSeq, clientId, e.getMessage());
+                        sendAck(channel, msg, false, "Message log persistence failed");
+                        return;
+                    }
+                }
+
                 topicsManager.publish(messagePack);
                 log.debug("Processed message from client {}: seq={}", clientId, msgSeq);
             } else {
@@ -484,6 +512,14 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         } catch (InterruptedException e) {
             heartbeatExecutor.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+
+        if (messageLogWriter != null) {
+            try {
+                messageLogWriter.close();
+            } catch (Exception e) {
+                log.warn("Failed to close message log writer cleanly: {}", e.getMessage());
+            }
         }
 
         // 断开所有客户端连接
