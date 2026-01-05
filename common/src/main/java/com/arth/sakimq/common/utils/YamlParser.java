@@ -19,37 +19,60 @@ public class YamlParser {
      * @throws IOException If an error occurs while reading the file
      */
     public static Map<String, String> parseYaml(String filePath) throws IOException {
-
         Map<String, String> configMap = new HashMap<>();
+        parseYamlInternal(filePath, configMap);
+        return configMap;
+    }
 
+    private static void parseYamlInternal(String filePath, Map<String, String> configMap) throws IOException {
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
+            java.util.Deque<String> keyStack = new java.util.ArrayDeque<>();
+            java.util.Deque<Integer> indentStack = new java.util.ArrayDeque<>();
+            indentStack.push(-1);
 
-                // Skip comments and empty lines
-                if (line.isEmpty() || line.startsWith("#")) {
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
                     continue;
                 }
 
-                // Split key-value pairs
-                int colonIndex = line.indexOf(':');
-                if (colonIndex > 0) {
-                    String key = line.substring(0, colonIndex).trim();
-                    String value = line.substring(colonIndex + 1).trim();
+                int indent = 0;
+                while (indent < line.length() && line.charAt(indent) == ' ') {
+                    indent++;
+                }
 
-                    // Remove quotes if present
-                    if ((value.startsWith("'") && value.endsWith("'")) ||
-                            (value.startsWith("\"") && value.endsWith("\""))) {
-                        value = value.substring(1, value.length() - 1);
+                String trimmedLine = line.trim();
+                int colonIndex = trimmedLine.indexOf(':');
+                
+                if (colonIndex > 0) {
+                    String key = trimmedLine.substring(0, colonIndex).trim();
+                    String value = trimmedLine.substring(colonIndex + 1).trim();
+
+                    while (indent <= indentStack.peek()) {
+                        indentStack.pop();
+                        if (!keyStack.isEmpty()) keyStack.pop();
                     }
 
-                    configMap.put(key, value);
+                    String fullKey = key;
+                    if (!keyStack.isEmpty()) {
+                        fullKey = String.join(".", keyStack) + "." + key;
+                    }
+
+                    if (value.isEmpty()) {
+                        // It's a parent key
+                        keyStack.push(key);
+                        indentStack.push(indent);
+                    } else {
+                         // Remove quotes if present
+                        if ((value.startsWith("'") && value.endsWith("'")) ||
+                                (value.startsWith("\"") && value.endsWith("\""))) {
+                            value = value.substring(1, value.length() - 1);
+                        }
+                        configMap.put(fullKey, value);
+                    }
                 }
             }
         }
-
-        return configMap;
     }
 
     /**

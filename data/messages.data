@@ -1,199 +1,0 @@
-=
-topic.alpha.
-
-index0	payload-0 ¥Óˆá¸3*
-Producer-A0=
-topic.alpha.
-
-index1	payload-1 ×Óˆá¸3*
-Producer-A0=
-topic.alpha.
-
-index2	payload-2 ÙÓˆá¸3*
-Producer-A0<
-
-topic.beta.
-
-index0	payload-0 ÚÓˆá¸3*
-Producer-B0<
-
-topic.beta.
-
-index1	payload-1 ÜÓˆá¸3*
-Producer-B0<
-
-topic.beta.
-
-index2	payload-2 ÞÓˆá¸3*
-Producer-B0J
-topic.alpha
-
-topic.beta/
-
-index0	payload-0 ßÓˆá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index1	payload-1 àÓˆá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index2	payload-2 ãÓˆá¸3*Producer-AB0=
-topic.alpha.
-
-index0	payload-0 ÔËÏá¸3*
-Producer-A0=
-topic.alpha.
-
-index1	payload-1 ŸÌÏá¸3*
-Producer-A0=
-topic.alpha.
-
-index2	payload-2 ¢ÌÏá¸3*
-Producer-A0<
-
-topic.beta.
-
-index0	payload-0 ¤ÌÏá¸3*
-Producer-B0<
-
-topic.beta.
-
-index1	payload-1 ¦ÌÏá¸3*
-Producer-B0<
-
-topic.beta.
-
-index2	payload-2 §ÌÏá¸3*
-Producer-B0J
-topic.alpha
-
-topic.beta/
-
-index0	payload-0 ©ÌÏá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index1	payload-1 ¬ÌÏá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index2	payload-2 ­ÌÏá¸3*Producer-AB0=
-topic.alpha.
-
-index0	payload-0 ë‡Ùá¸3*
-Producer-A0=
-topic.alpha.	
-
-index1	payload-1 ¨ˆÙá¸3*
-Producer-A0	=
-topic.alpha.
-
-
-index2	payload-2 ©ˆÙá¸3*
-Producer-A0
-=
-topic.alpha.
-
-index0	payload-0 ï’üá¸3*
-Producer-A0=
-topic.alpha.
-
-index1	payload-1 ¬“üá¸3*
-Producer-A0=
-topic.alpha.
-
-index2	payload-2 ®“üá¸3*
-Producer-A0<
-
-topic.beta.
-
-index0	payload-0 ´“üá¸3*
-Producer-B0<
-
-topic.beta.	
-
-index1	payload-1 º“üá¸3*
-Producer-B0	<
-
-topic.beta.
-
-
-index2	payload-2 É“üá¸3*
-Producer-B0
-J
-topic.alpha
-
-topic.beta/
-
-index0	payload-0 Ë“üá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index1	payload-1 Í“üá¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/	
-
-index2	payload-2 Ï“üá¸3*Producer-AB0	=
-topic.alpha.
-
-index0	payload-0  ïÜå¸3*
-Producer-A0=
-topic.alpha.
-
-index1	payload-1 öïÜå¸3*
-Producer-A0=
-topic.alpha.
-
-index2	payload-2 úïÜå¸3*
-Producer-A0<
-
-topic.beta.
-
-index0	payload-0 ýïÜå¸3*
-Producer-B0<
-
-topic.beta.
-
-index1	payload-1 ðÜå¸3*
-Producer-B0<
-
-topic.beta.
-
-index2	payload-2 ‡ðÜå¸3*
-Producer-B0J
-topic.alpha
-
-topic.beta/
-
-
-index0	payload-0 ŠðÜå¸3*Producer-AB0
-J
-topic.alpha
-
-topic.beta/
-
-index1	payload-1 ŒðÜå¸3*Producer-AB0J
-topic.alpha
-
-topic.beta/
-
-index2	payload-2 ðÜå¸3*Producer-AB0=
-topic.alpha.
-
-index0	payload-0 ÷ˆÞå¸3*
-Producer-A0=
-topic.alpha.
-
-index1	payload-1 ½‰Þå¸3*
-Producer-A0=
-topic.alpha.
-
-index2	payload-2 ¿‰Þå¸3*
-Producer-A0

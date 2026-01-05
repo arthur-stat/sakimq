@@ -37,13 +37,13 @@ public class BrokerConfig {
     private BrokerConfig() {
         try {
             Map<String, String> configMap = YamlParser.parseYaml(DEFAULT_CONFIG_FILE);
-            heartbeatTimeoutMs = YamlParser.getLongValue(configMap, "heartbeatTimeoutMs", DEFAULT_HEARTBEAT_TIMEOUT_MS);
-            ackMaxRetries = YamlParser.getIntValue(configMap, "ackMaxRetries", DEFAULT_ACK_MAX_RETRIES);
-            ackRetryDelayMs = YamlParser.getLongValue(configMap, "ackRetryDelayMs", DEFAULT_ACK_RETRY_DELAY_MS);
-            messageLogEnabled = YamlParser.getBooleanValue(configMap, "messageLogEnabled", DEFAULT_MESSAGE_LOG_ENABLED);
-            messageLogMaxBytes = YamlParser.getLongValue(configMap, "messageLogMaxBytes", DEFAULT_MESSAGE_LOG_MAX_BYTES);
-            messageLogDir = YamlParser.getStringValue(configMap, "messageLogDir", DEFAULT_MESSAGE_LOG_DIR);
-            messageLogIncludeBody = YamlParser.getBooleanValue(configMap, "messageLogIncludeBody", DEFAULT_MESSAGE_LOG_INCLUDE_BODY);
+            heartbeatTimeoutMs = YamlParser.getLongValue(configMap, "heartbeat.timeoutMs", DEFAULT_HEARTBEAT_TIMEOUT_MS);
+            ackMaxRetries = YamlParser.getIntValue(configMap, "ack.maxRetries", DEFAULT_ACK_MAX_RETRIES);
+            ackRetryDelayMs = YamlParser.getLongValue(configMap, "ack.retryDelayMs", DEFAULT_ACK_RETRY_DELAY_MS);
+            messageLogEnabled = YamlParser.getBooleanValue(configMap, "messageLog.enabled", DEFAULT_MESSAGE_LOG_ENABLED);
+            messageLogMaxBytes = YamlParser.getLongValue(configMap, "messageLog.maxBytes", DEFAULT_MESSAGE_LOG_MAX_BYTES);
+            messageLogDir = YamlParser.getStringValue(configMap, "messageLog.dir", DEFAULT_MESSAGE_LOG_DIR);
+            messageLogIncludeBody = YamlParser.getBooleanValue(configMap, "messageLog.includeBody", DEFAULT_MESSAGE_LOG_INCLUDE_BODY);
         } catch (IOException e) {
             log.warn("Failed to load broker config file: " + DEFAULT_CONFIG_FILE + ". Using default values.");
             heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS;

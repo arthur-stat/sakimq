@@ -1,5 +1,6 @@
 package com.arth.sakimq.broker.core.impl;
 
+import com.arth.sakimq.broker.config.BrokerConfig;
 import com.arth.sakimq.broker.core.Broker;
 import com.arth.sakimq.broker.seq.SeqManager;
 import com.arth.sakimq.broker.store.FileMessageStore;
@@ -26,10 +27,11 @@ public class DefaultBroker implements Broker {
     private final OffsetManager offsetManager;
     private final NettyServer server;
     private volatile boolean active = false;
-    private final String storeDir = "./data";
+    private final String storeDir;
 
     public DefaultBroker() {
         this.name = "Broker-" + UUID.randomUUID();
+        this.storeDir = BrokerConfig.getConfig().getMessageLogDir();
         this.messageStore = new FileMessageStore(storeDir);
         this.offsetManager = new OffsetManager(storeDir);
         this.topicsManager = new TopicsManager();
@@ -46,6 +48,7 @@ public class DefaultBroker implements Broker {
     public DefaultBroker(int port, String name) {
         this.port = port;
         this.name = name;
+        this.storeDir = BrokerConfig.getConfig().getMessageLogDir();
         this.topicsManager = new TopicsManager();
         this.sessionManager = new SeqManager();
         this.messageStore = new FileMessageStore(storeDir);

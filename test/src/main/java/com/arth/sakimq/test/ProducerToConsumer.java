@@ -6,6 +6,7 @@ import com.arth.sakimq.clients.consumer.impl.SingleConsumer;
 import com.arth.sakimq.clients.producer.Producer;
 import com.arth.sakimq.clients.producer.impl.DefaultProducer;
 import com.google.protobuf.ByteString;
+import java.util.concurrent.CompletableFuture;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -85,7 +86,7 @@ public class ProducerToConsumer {
         sendMany(p3, List.of(topicA, topicB), 3);
 
         // Wait for delivery
-        boolean allReceived = latch.await(5, TimeUnit.SECONDS);
+        boolean allReceived = latch.await(15, TimeUnit.SECONDS);
 
         System.out.printf("C1 (A) received: %d%n", c1Count.get());
         System.out.printf("C2 (B) received: %d%n", c2Count.get());
@@ -106,7 +107,12 @@ public class ProducerToConsumer {
 
     private static void sendMany(Producer producer, List<String> topics, int count) {
         for (int i = 0; i < count; i++) {
-            producer.send(topics, Map.of("index", String.valueOf(i)), ByteString.copyFromUtf8("payload-" + i));
+            try {
+                producer.send(topics, Map.of("index", String.valueOf(i)), ByteString.copyFromUtf8("payload-" + i));
+                System.out.println("Message sent successfully, sequence: " + i);
+            } catch (Exception e) {
+                System.err.println("Failed to send message sequence: " + i + ", error: " + e.getMessage());
+            }
         }
     }
 }

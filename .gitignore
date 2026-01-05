@@ -4,6 +4,10 @@ target/
 !**/src/test/**/target/
 .kotlin
 
+### Logs and Data ###
+logs/
+data/
+
 ### IntelliJ IDEA ###
 .idea/
 
