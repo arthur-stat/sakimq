@@ -10,6 +10,8 @@ message Message {
   map<string, string> headers = 2;
   bytes body = 3;
   int64 timestamp = 4;
+  string client_id = 5;
+  int64 sequence_number = 6;
 }
 
 // Message Pack

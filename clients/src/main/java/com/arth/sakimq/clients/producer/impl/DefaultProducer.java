@@ -27,8 +27,9 @@ public class DefaultProducer implements Producer, AutoCloseable {
     private final String name;
     private final NettyClient client;
     private final ProducerConfig config;
-    private final AtomicLong seq = new AtomicLong(0);
+    private final AtomicLong seq;
     private final ConcurrentMap<Long, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
+    private final java.nio.file.Path seqFile;
 
     public DefaultProducer() {
         this("Producer-" + UUID.randomUUID());
@@ -42,6 +43,29 @@ public class DefaultProducer implements Producer, AutoCloseable {
         this.name = name;
         this.client = new NettyClient(new DefaultProducerHandler(), nettyConfig);
         this.config = producerConfig;
+        this.seqFile = java.nio.file.Paths.get(System.getProperty("user.home"), ".sakimq", "producer", name, "seq");
+        this.seq = new AtomicLong(loadSeq());
+    }
+
+    private long loadSeq() {
+        try {
+            if (java.nio.file.Files.exists(seqFile)) {
+                String s = java.nio.file.Files.readString(seqFile).trim();
+                return Long.parseLong(s);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load sequence number for producer {}: {}", name, e.getMessage());
+        }
+        return 0;
+    }
+
+    private void saveSeq(long s) {
+        try {
+            java.nio.file.Files.createDirectories(seqFile.getParent());
+            java.nio.file.Files.writeString(seqFile, String.valueOf(s));
+        } catch (Exception e) {
+            log.warn("Failed to save sequence number for producer {}: {}", name, e.getMessage());
+        }
     }
 
     @Override
@@ -53,12 +77,15 @@ public class DefaultProducer implements Producer, AutoCloseable {
     @Override
     public void send(List<String> topics, Map<String, String> headers, ByteString body) {
         long messageId = seq.incrementAndGet();
+        saveSeq(messageId);
 
         Message message = Message.newBuilder()
                 .setMessageId(messageId)
                 .putAllHeaders(headers)
                 .setBody(body)
                 .setTimestamp(System.currentTimeMillis())
+                .setClientId(name)
+                .setSequenceNumber(messageId)
                 .build();
 
         MessagePack messagePack = MessagePack.newBuilder()

@@ -3,6 +3,8 @@ package com.arth.sakimq.broker.core.impl;
 import com.arth.sakimq.broker.config.BrokerConfig;
 import com.arth.sakimq.broker.log.MessageLogWriter;
 import com.arth.sakimq.broker.seq.SeqManager;
+import com.arth.sakimq.broker.store.MessageStore;
+import com.arth.sakimq.broker.store.OffsetManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.network.handler.BrokerProtocolHandler;
@@ -69,30 +71,21 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         }
     }
 
-    public DefaultBrokerApplicationProtocolHandler(TopicsManager topicsManager, SeqManager seqManager) {
+    private final MessageStore messageStore;
+    private final OffsetManager offsetManager;
+
+    public DefaultBrokerApplicationProtocolHandler(TopicsManager topicsManager, SeqManager seqManager, MessageStore messageStore, OffsetManager offsetManager) {
         this.topicsManager = topicsManager;
         this.seqManager = seqManager;
-        this.messageLogWriter = initLogWriter();
+        this.messageStore = messageStore;
+        this.offsetManager = offsetManager;
+        this.messageLogWriter = null; // Deprecated
 
         // Start heartbeat timeout checks every 30s
         heartbeatExecutor.scheduleAtFixedRate(this::checkHeartbeatTimeout, 30, 30, TimeUnit.SECONDS);
 
         // Add JVM shutdown hook to release resources
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
-    }
-
-    private MessageLogWriter initLogWriter() {
-        if (!brokerConfig.isMessageLogEnabled()) {
-            return null;
-        }
-        try {
-            return new MessageLogWriter(
-                    brokerConfig.getMessageLogDir(),
-                    brokerConfig.getMessageLogMaxBytes(),
-                    brokerConfig.isMessageLogIncludeBody());
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize message log writer", e);
-        }
     }
 
     @Override
@@ -106,6 +99,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 case CONNECT -> onConnect(ctx, msg);
                 case DISCONNECT -> onDisconnect(ctx, msg);
                 case POLL_REQUEST -> onPoll(ctx, msg);
+                case OFFSET_COMMIT -> onOffsetCommit(ctx, msg);
                 default -> log.warn("Received unknown message type: {}", msg.getType());
             }
         } catch (Exception e) {
@@ -147,12 +141,12 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
                 // If it is a new message, publish it to the topic
                 MessagePack messagePack = msg.getMessagePack();
 
-                if (messageLogWriter != null) {
+                if (messageStore != null) {
                     try {
-                        messageLogWriter.append(messagePack, clientId, msgSeq);
+                        messageStore.append(messagePack);
                     } catch (Exception e) {
-                        log.error("Persist message to log failed, rejecting message seq {} from {}: {}", msgSeq, clientId, e.getMessage());
-                        sendAck(channel, msg, false, "Message log persistence failed");
+                        log.error("Persist message to store failed, rejecting message seq {} from {}: {}", msgSeq, clientId, e.getMessage());
+                        sendAck(channel, msg, false, "Message persistence failed");
                         return;
                     }
                 }
@@ -193,18 +187,66 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
 
         connection.updateHeartbeat();
 
-        MessagePack next = fetchNextMessage(msg);
+        if (!msg.hasPollRequest()) {
+            sendAck(channel, msg, false, "Invalid Poll Request");
+            return;
+        }
+
+        PollRequest request = msg.getPollRequest();
+        String groupId = request.getGroupId();
+        if (groupId == null || groupId.isEmpty()) {
+            // Default group if not provided
+            groupId = "default";
+        }
+        List<String> topics = request.getTopicsList();
+
+        MessagePack foundMsg = null;
+        long foundOffset = -1;
+        String foundTopic = null;
+
+        for (String topicName : topics) {
+            com.arth.sakimq.broker.topic.Topic topic = topicsManager.getTopic(topicName);
+            if (topic == null) continue;
+
+            long offset = offsetManager.getOffset(groupId, topicName);
+            if (offset < 0) {
+                offset = 0; // Start from beginning by default
+            }
+
+            MessagePack mp = topic.getMessage(offset);
+            if (mp != null) {
+                foundMsg = mp;
+                foundOffset = offset;
+                foundTopic = topicName;
+                break; // Found a message, break and return
+            }
+        }
 
         TransportMessage.Builder builder = TransportMessage.newBuilder()
                 .setType(MessageType.POLL_RESPONSE)
-                .setSeq(msg != null ? msg.getSeq() : 0)
+                .setSeq(msg.getSeq())
                 .setTimestamp(System.currentTimeMillis());
 
-        if (next != null) {
-            builder.setMessagePack(next);
+        PollResponse.Builder pollResponseBuilder = PollResponse.newBuilder();
+        if (foundMsg != null) {
+            pollResponseBuilder.setMessagePack(foundMsg);
+            pollResponseBuilder.setOffset(foundOffset);
+            pollResponseBuilder.setTopic(foundTopic);
         }
 
+        builder.setPollResponse(pollResponseBuilder);
         channel.writeAndFlush(builder.build());
+    }
+
+    public void onOffsetCommit(ChannelHandlerContext ctx, TransportMessage msg) {
+        if (!msg.hasOffsetCommit()) {
+             sendAck(ctx.channel(), msg, false, "Invalid Offset Commit");
+             return;
+        }
+        OffsetCommitPayload commit = msg.getOffsetCommit();
+        offsetManager.updateOffset(commit.getGroupId(), commit.getTopic(), commit.getOffset());
+        // Auto persist is handled inside OffsetManager.updateOffset
+        sendAck(ctx.channel(), msg, true, null);
     }
 
     public void onHeartbeat(ChannelHandlerContext ctx, TransportMessage msg) {
@@ -322,12 +364,6 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         }
     }
 
-    private MessagePack fetchNextMessage(TransportMessage request) {
-        List<String> requestedTopics = (request != null && request.hasPollRequest())
-                ? request.getPollRequest().getTopicsList()
-                : List.of();
-        return topicsManager.poll(requestedTopics);
-    }
 
     private void sendAck(Channel channel, TransportMessage originalMsg, boolean success, String errorMessage) {
         sendAckWithRetry(channel, originalMsg, success, errorMessage, 0);

@@ -17,7 +17,14 @@ message TransportMessage {
     ConnectPayload connect = 6;      // for MessageTye = CONNECT
     PollRequest poll_request = 7;    // for MessageType = POLL_REQUEST
     PollResponse poll_response = 8;  // for MessageType = POLL_RESPONSE
+    OffsetCommitPayload offset_commit = 9; // for MessageType = OFFSET_COMMIT
   }
+}
+
+message OffsetCommitPayload {
+  string group_id = 1;
+  string topic = 2;
+  int64 offset = 3;
 }
 
 // Enumeration of transport message types
@@ -29,6 +36,7 @@ enum MessageType {
   DISCONNECT = 4;
   POLL_REQUEST = 5;
   POLL_RESPONSE = 6;
+  OFFSET_COMMIT = 7;
 }
 
 // Data structure for ACK messages
@@ -48,9 +56,13 @@ message ConnectPayload {
 // Data structure for POLL request messages
 message PollRequest {
   repeated string topics = 1;
+  string group_id = 2;
 }
 
 // Data structure for POLL response messages
 message PollResponse {
   MessagePack message_pack = 1;
+  int64 offset = 2;
+  string topic = 3;
 }
+

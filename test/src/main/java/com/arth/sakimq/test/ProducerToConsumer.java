@@ -24,10 +24,13 @@ public class ProducerToConsumer {
         String topicA = "topic.alpha";
         String topicB = "topic.beta";
 
+        System.out.println("Starting ProducerToConsumer test...");
         DefaultBroker broker = new DefaultBroker(port);
+        System.out.println("Starting Broker on port " + port);
         broker.start().join();
 
         // Prepare consumers
+        System.out.println("Setting up consumers...");
         List<ConsumerGroup> consumers = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(12);  // 3 for A, 3 for B, 6 for both
         AtomicInteger c1Count = new AtomicInteger();
@@ -38,6 +41,7 @@ public class ProducerToConsumer {
                 .subscribe(List.of(topicA))
                 .addBroker("localhost", port)
                 .onMessage(msg -> {
+                    System.out.println("Consumer-A received message on " + msg.getTopicsList());
                     c1Count.incrementAndGet();
                     latch.countDown();
                 });
@@ -45,6 +49,7 @@ public class ProducerToConsumer {
                 .subscribe(List.of(topicB))
                 .addBroker("localhost", port)
                 .onMessage(msg -> {
+                    System.out.println("Consumer-B received message on " + msg.getTopicsList());
                     c2Count.incrementAndGet();
                     latch.countDown();
                 });
@@ -52,6 +57,7 @@ public class ProducerToConsumer {
                 .subscribe(List.of(topicA, topicB))
                 .addBroker("localhost", port)
                 .onMessage(msg -> {
+                    System.out.println("Consumer-All received message on " + msg.getTopicsList());
                     c3Count.incrementAndGet();
                     latch.countDown();
                 });
@@ -63,6 +69,7 @@ public class ProducerToConsumer {
         consumers.forEach(ConsumerGroup::start);
 
         // Prepare producers
+        System.out.println("Setting up producers...");
         Producer p1 = new DefaultProducer("Producer-A").addBroker("localhost", port);
         Producer p2 = new DefaultProducer("Producer-B").addBroker("localhost", port);
         Producer p3 = new DefaultProducer("Producer-AB").addBroker("localhost", port);
@@ -72,6 +79,7 @@ public class ProducerToConsumer {
         p3.start();
 
         // Send messages to different topics
+        System.out.println("Sending messages...");
         sendMany(p1, topicA, 3);
         sendMany(p2, topicB, 3);
         sendMany(p3, List.of(topicA, topicB), 3);

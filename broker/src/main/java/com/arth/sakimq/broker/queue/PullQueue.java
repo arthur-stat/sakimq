@@ -15,6 +15,10 @@ public interface PullQueue {
 
     MessagePack take();
 
+    MessagePack get(long sequence);
+
+    long getCursor();
+
     boolean isFull();
 
     void close();

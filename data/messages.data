@@ -1,0 +1,43 @@
+=
+topic.alpha.
+
+index0	payload-0 ¥Óˆá¸3*
+Producer-A0=
+topic.alpha.
+
+index1	payload-1 ×Óˆá¸3*
+Producer-A0=
+topic.alpha.
+
+index2	payload-2 ÙÓˆá¸3*
+Producer-A0<
+
+topic.beta.
+
+index0	payload-0 ÚÓˆá¸3*
+Producer-B0<
+
+topic.beta.
+
+index1	payload-1 ÜÓˆá¸3*
+Producer-B0<
+
+topic.beta.
+
+index2	payload-2 ÞÓˆá¸3*
+Producer-B0J
+topic.alpha
+
+topic.beta/
+
+index0	payload-0 ßÓˆá¸3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index1	payload-1 àÓˆá¸3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index2	payload-2 ãÓˆá¸3*Producer-AB0

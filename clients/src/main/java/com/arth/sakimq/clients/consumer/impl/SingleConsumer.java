@@ -30,6 +30,7 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
     private volatile Consumer<MessagePack> messageListener;
     private volatile boolean active = false;
     private Thread pollerThread;
+    private final CountDownLatch connectLatch = new CountDownLatch(1);
 
     public SingleConsumer() {
         this("Consumer-" + UUID.randomUUID());
@@ -116,6 +117,16 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
     }
 
     private void pollLoop() {
+        try {
+            if (!connectLatch.await(10, TimeUnit.SECONDS)) {
+                log.error("Timeout waiting for consumer {} to connect.", name);
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+
         while (active) {
             try {
                 MessagePack messagePack = pollOnce().join();
@@ -168,6 +179,8 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
 
     private class SingleConsumerHandler implements ClientProtocolHandler {
 
+        private volatile long connectSeq = -1;
+
         @Override
         public void dispatch(ChannelHandlerContext ctx, TransportMessage msg) {
             switch (msg.getType()) {
@@ -187,6 +200,10 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
         @Override
         public void onAck(ChannelHandlerContext ctx, TransportMessage msg) {
             log.debug("Received ACK for consumer {}: seq={}", name, msg.getSeq());
+            if (msg.getSeq() == connectSeq && msg.hasAck() && msg.getAck().getSuccess()) {
+                connectLatch.countDown();
+                log.info("Consumer {} registered successfully.", name);
+            }
         }
 
         @Override
@@ -196,9 +213,10 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
 
         @Override
         public void onConnect(ChannelHandlerContext ctx) {
+            connectSeq = pollSeq.incrementAndGet();
             TransportMessage connectMsg = TransportMessage.newBuilder()
                     .setType(MessageType.CONNECT)
-                    .setSeq(0)
+                    .setSeq(connectSeq)
                     .setTimestamp(System.currentTimeMillis())
                     .setConnect(ConnectPayload.newBuilder()
                             .setClientId(name)
@@ -222,7 +240,17 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
         }
 
         private void onPollResponse(ChannelHandlerContext ctx, TransportMessage msg) {
-            MessagePack pack = msg.hasMessagePack() ? msg.getMessagePack() : null;
+            MessagePack pack = null;
+            if (msg.hasPollResponse()) {
+                PollResponse response = msg.getPollResponse();
+                if (response.hasMessagePack()) {
+                    pack = response.getMessagePack();
+                }
+            } else if (msg.hasMessagePack()) {
+                // Fallback for backward compatibility or if message is sent directly
+                pack = msg.getMessagePack();
+            }
+            
             CompletableFuture<MessagePack> future = pendingPolls.remove(msg.getSeq());
             if (future != null) {
                 future.complete(pack);

@@ -75,6 +75,28 @@ public class DisruptorQueue implements PullQueue {
     }
 
     /**
+     * Get message by sequence (0-indexed)
+     */
+    public MessagePack get(long sequence) {
+        if (sequence < 0 || sequence > ringBuffer.getCursor()) {
+            return null;
+        }
+        // Check if the sequence is overwritten
+        long minSeq = ringBuffer.getCursor() - ringBuffer.getBufferSize() + 1;
+        if (sequence < minSeq) {
+             // Data overwritten
+             return null;
+        }
+        
+        ReusableMessageEvent event = ringBuffer.get(sequence);
+        return event.getMessagePack();
+    }
+
+    public long getCursor() {
+        return ringBuffer.getCursor();
+    }
+
+    /**
      * Non-blocking poll
      */
     @Override

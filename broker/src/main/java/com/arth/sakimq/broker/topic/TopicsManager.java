@@ -60,4 +60,8 @@ public class TopicsManager {
     public void forEach(Consumer<Topic> consumer) {
         topics.values().forEach(consumer);
     }
+
+    public Topic getTopic(String name) {
+        return topics.get(name);
+    }
 }

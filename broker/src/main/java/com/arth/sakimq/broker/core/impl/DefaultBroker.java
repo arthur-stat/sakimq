@@ -2,9 +2,13 @@ package com.arth.sakimq.broker.core.impl;
 
 import com.arth.sakimq.broker.core.Broker;
 import com.arth.sakimq.broker.seq.SeqManager;
+import com.arth.sakimq.broker.store.FileMessageStore;
+import com.arth.sakimq.broker.store.MessageStore;
+import com.arth.sakimq.broker.store.OffsetManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.netty.NettyServer;
+import com.arth.sakimq.protocol.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,12 +23,19 @@ public class DefaultBroker implements Broker {
     private final String name;
     private final TopicsManager topicsManager;
     private final SeqManager sessionManager;
+    private final MessageStore messageStore;
+    private final OffsetManager offsetManager;
     private final NettyServer server;
     private volatile boolean active = false;
+    private final String storeDir = "./data";
 
     public DefaultBroker() {
         this.name = "Broker-" + UUID.randomUUID();
-        this.server = new NettyServer(new DefaultBrokerApplicationProtocolHandler(topicsManager = new TopicsManager(), sessionManager = new SeqManager()));
+        this.messageStore = new FileMessageStore(storeDir);
+        this.offsetManager = new OffsetManager(storeDir);
+        this.topicsManager = new TopicsManager();
+        this.sessionManager = new SeqManager();
+        this.server = new NettyServer(new DefaultBrokerApplicationProtocolHandler(topicsManager, sessionManager, messageStore, offsetManager));
         this.port = server.getPort();
         log.info("Broker initialized with custom port: {}", this.port);
     }
@@ -38,7 +49,9 @@ public class DefaultBroker implements Broker {
         this.name = name;
         this.topicsManager = new TopicsManager();
         this.sessionManager = new SeqManager();
-        this.server = new NettyServer(port, new DefaultBrokerApplicationProtocolHandler(topicsManager, sessionManager));
+        this.messageStore = new FileMessageStore(storeDir);
+        this.offsetManager = new OffsetManager(storeDir);
+        this.server = new NettyServer(port, new DefaultBrokerApplicationProtocolHandler(topicsManager, sessionManager, messageStore, offsetManager));
         log.info("Broker initialized with custom port: {}", this.port);
     }
 
@@ -48,6 +61,17 @@ public class DefaultBroker implements Broker {
             synchronized (this) {
                 if (!active) {
                     try {
+                        // Start stores
+                        messageStore.start();
+                        offsetManager.load();
+
+                        // Replay messages to restore memory state
+                        log.info("Replaying messages from store...");
+                        messageStore.replay(0, (offset, msgPack) -> {
+                            topicsManager.publish(msgPack);
+                        });
+                        log.info("Replay completed.");
+
                         CompletableFuture<Void> future = server.start();
                         active = true;
                         log.info("Broker {} started successfully.", name);

@@ -15,7 +15,7 @@ public class Topic {
 
     private final String name;
     private final String description;
-    private final List<PullQueue> queues = new ArrayList<>();
+    private final PullQueue queue;
 
     public Topic(String name) {
         this(name, "");
@@ -24,30 +24,26 @@ public class Topic {
     public Topic(String name, String description) {
         this.name = name;
         this.description = description;
-        int consumerGroupSize = QueueConfig.getConfig().getConsumerGroupSize();
-        for (int i = 0; i < consumerGroupSize; i++) {
-            PullQueue queue = new DisruptorQueue(QueueConfig.getConfig());
-            queue.setQueueId(QUEUE_ID.getAndIncrement());
-            queues.add(queue);
-        }
+        this.queue = new DisruptorQueue(QueueConfig.getConfig());
+        this.queue.setQueueId(QUEUE_ID.getAndIncrement());
     }
 
     public void publish(MessagePack messagePack) {
-        for (PullQueue queue : queues) {
-            if (!queue.append(messagePack)) {
-                queue.appendBlocking(messagePack);
-            }
+        if (!queue.append(messagePack)) {
+            queue.appendBlocking(messagePack);
         }
     }
 
     public MessagePack poll() {
-        for (PullQueue queue : queues) {
-            MessagePack pack = queue.poll();
-            if (pack != null) {
-                return pack;
-            }
-        }
-        return null;
+        return queue.poll();
+    }
+
+    public MessagePack getMessage(long sequence) {
+        return queue.get(sequence);
+    }
+
+    public long getMaxOffset() {
+        return queue.getCursor();
     }
 
     public String getName() {
