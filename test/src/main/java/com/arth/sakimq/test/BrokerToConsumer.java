@@ -17,7 +17,7 @@ public class BrokerToConsumer {
         DefaultProducer producer = new DefaultProducer();
         SingleConsumer consumer = new SingleConsumer();
 
-        broker.start().join();
+        broker.start();
 
         producer.addBroker("localhost", port);
         SingleConsumer c = (SingleConsumer) consumer.addBroker("localhost", port);
@@ -35,6 +35,6 @@ public class BrokerToConsumer {
 
         consumer.shutdown();
         producer.shutdown();
-        broker.shutdown().join();
+        broker.shutdown();
     }
 }

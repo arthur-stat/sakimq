@@ -56,7 +56,7 @@ public class DefaultBroker implements Broker {
     }
 
     @Override
-    public CompletableFuture<Void> start() {
+    public void start() throws Exception {
         if (!active) {
             synchronized (this) {
                 if (!active) {
@@ -72,27 +72,23 @@ public class DefaultBroker implements Broker {
                         });
                         log.info("Replay completed.");
 
-                        CompletableFuture<Void> future = server.start();
+                        server.start().get();
                         active = true;
                         log.info("Broker {} started successfully.", name);
-                        return future;
                     } catch (Exception e) {
                         log.error("Failed to start broker {}: {}", name, e.getMessage());
                         throw new UnavailableChannelException("Failed to start broker", e);
                     }
-                } else {
-                    return null;
                 }
             }
         } else {
-            log.warn("Consumer {} is already started.", name);
-            return null;
+            log.warn("Broker {} is already started.", name);
         }
     }
 
     @Override
-    public CompletableFuture<Void> shutdown() {
-        return server.shutdown();
+    public void shutdown() throws Exception {
+        server.shutdown().get();
     }
 
     @Override
@@ -103,6 +99,16 @@ public class DefaultBroker implements Broker {
     @Override
     public TopicsManager getTopicsManager() {
         return topicsManager;
+    }
+
+    @Override
+    public OffsetManager getOffsetManager() {
+        return offsetManager;
+    }
+
+    @Override
+    public MessageStore getMessageStore() {
+        return messageStore;
     }
 
     @Override

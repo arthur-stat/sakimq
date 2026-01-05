@@ -24,7 +24,7 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
     private final NettyClient client;
     private final ConsumerConfig config;
     private final AtomicLong pollSeq = new AtomicLong(0);
-    private final ConcurrentMap<Long, CompletableFuture<MessagePack>> pendingPolls = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Long, CompletableFuture<PollResponse>> pendingPolls = new ConcurrentHashMap<>();
     private final BlockingQueue<MessagePack> inbox = new LinkedBlockingQueue<>();
     private final List<String> subscribedTopics = new CopyOnWriteArrayList<>();
     private volatile Consumer<MessagePack> messageListener;
@@ -68,6 +68,12 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
     @Override
     public ConsumerGroup addBroker(String host, int port) {
         client.addConnection(host, port);
+        return this;
+    }
+
+    @Override
+    public ConsumerGroup removeBroker(String host, int port) {
+        client.removeConnection(host, port);
         return this;
     }
 
@@ -129,9 +135,10 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
 
         while (active) {
             try {
-                MessagePack messagePack = pollOnce().join();
-                if (messagePack != null) {
-                    deliver(messagePack);
+                PollResponse response = pollOnce().join();
+                if (response != null && response.hasMessagePack()) {
+                    deliver(response.getMessagePack());
+                    commitOffset(response.getTopic(), response.getOffset() + 1);
                 }
             } catch (Exception e) {
                 log.warn("Polling failed for {}: {}", name, e.getMessage());
@@ -146,9 +153,23 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
         }
     }
 
-    private CompletableFuture<MessagePack> pollOnce() {
+    private void commitOffset(String topic, long offset) {
+        TransportMessage commitMsg = TransportMessage.newBuilder()
+                .setType(MessageType.OFFSET_COMMIT)
+                .setSeq(pollSeq.incrementAndGet())
+                .setTimestamp(System.currentTimeMillis())
+                .setOffsetCommit(OffsetCommitPayload.newBuilder()
+                        .setGroupId(name)
+                        .setTopic(topic)
+                        .setOffset(offset)
+                        .build())
+                .build();
+        client.send(commitMsg);
+    }
+
+    private CompletableFuture<PollResponse> pollOnce() {
         long seq = pollSeq.incrementAndGet();
-        CompletableFuture<MessagePack> responseFuture = new CompletableFuture<>();
+        CompletableFuture<PollResponse> responseFuture = new CompletableFuture<>();
         pendingPolls.put(seq, responseFuture);
 
         TransportMessage request = TransportMessage.newBuilder()
@@ -240,22 +261,14 @@ public class SingleConsumer implements ConsumerGroup, AutoCloseable {
         }
 
         private void onPollResponse(ChannelHandlerContext ctx, TransportMessage msg) {
-            MessagePack pack = null;
+            PollResponse response = null;
             if (msg.hasPollResponse()) {
-                PollResponse response = msg.getPollResponse();
-                if (response.hasMessagePack()) {
-                    pack = response.getMessagePack();
-                }
-            } else if (msg.hasMessagePack()) {
-                // Fallback for backward compatibility or if message is sent directly
-                pack = msg.getMessagePack();
+                response = msg.getPollResponse();
             }
             
-            CompletableFuture<MessagePack> future = pendingPolls.remove(msg.getSeq());
+            CompletableFuture<PollResponse> future = pendingPolls.remove(msg.getSeq());
             if (future != null) {
-                future.complete(pack);
-            } else if (pack != null) {
-                deliver(pack);
+                future.complete(response);
             }
         }
     }

@@ -27,7 +27,7 @@ public class ProducerToConsumer {
         System.out.println("Starting ProducerToConsumer test...");
         DefaultBroker broker = new DefaultBroker(port);
         System.out.println("Starting Broker on port " + port);
-        broker.start().join();
+        broker.start();
 
         // Prepare consumers
         System.out.println("Setting up consumers...");
@@ -97,7 +97,7 @@ public class ProducerToConsumer {
         p1.shutdown();
         p2.shutdown();
         p3.shutdown();
-        broker.shutdown().join();
+        broker.shutdown();
     }
 
     private static void sendMany(Producer producer, String topic, int count) {

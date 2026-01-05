@@ -40,4 +40,104 @@ topic.beta/
 
 topic.beta/
 
-index2	payload-2 „”à·∏3*Producer-AB0
+index2	payload-2 „”à·∏3*Producer-AB0=
+topic.alpha.
+
+index0	payload-0 ‘Àœ·∏3*
+Producer-A0=
+topic.alpha.
+
+index1	payload-1 üÃœ·∏3*
+Producer-A0=
+topic.alpha.
+
+index2	payload-2 ¢Ãœ·∏3*
+Producer-A0<
+
+topic.beta.
+
+index0	payload-0 §Ãœ·∏3*
+Producer-B0<
+
+topic.beta.
+
+index1	payload-1 ¶Ãœ·∏3*
+Producer-B0<
+
+topic.beta.
+
+index2	payload-2 ßÃœ·∏3*
+Producer-B0J
+topic.alpha
+
+topic.beta/
+
+index0	payload-0 ©Ãœ·∏3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index1	payload-1 ¨Ãœ·∏3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index2	payload-2 ≠Ãœ·∏3*Producer-AB0=
+topic.alpha.
+
+index0	payload-0 ÎáŸ·∏3*
+Producer-A0=
+topic.alpha.	
+
+index1	payload-1 ®àŸ·∏3*
+Producer-A0	=
+topic.alpha.
+
+
+index2	payload-2 ©àŸ·∏3*
+Producer-A0
+=
+topic.alpha.
+
+index0	payload-0 Ôí¸·∏3*
+Producer-A0=
+topic.alpha.
+
+index1	payload-1 ¨ì¸·∏3*
+Producer-A0=
+topic.alpha.
+
+index2	payload-2 Æì¸·∏3*
+Producer-A0<
+
+topic.beta.
+
+index0	payload-0 ¥ì¸·∏3*
+Producer-B0<
+
+topic.beta.	
+
+index1	payload-1 ∫ì¸·∏3*
+Producer-B0	<
+
+topic.beta.
+
+
+index2	payload-2 …ì¸·∏3*
+Producer-B0
+J
+topic.alpha
+
+topic.beta/
+
+index0	payload-0 Àì¸·∏3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index1	payload-1 Õì¸·∏3*Producer-AB0J
+topic.alpha
+
+topic.beta/	
+
+index2	payload-2 œì¸·∏3*Producer-AB0	

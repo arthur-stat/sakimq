@@ -69,19 +69,55 @@ public class NettyClient {
             if (!brokerAddresses.contains(address)) {
                 brokerAddresses.add(address);
                 log.debug("Added broker: {}", address);
+                // If client is already started, connect immediately
+                if (group != null && !group.isShuttingDown()) {
+                    try {
+                        connectToBroker(address);
+                    } catch (Exception e) {
+                        log.error("Failed to connect to added broker: {}", address, e);
+                    }
+                }
             }
         }
         return this;
     }
 
     public NettyClient addConnection(String host) {
-        InetSocketAddress address = new InetSocketAddress(host, config.getPort());
+        return addConnection(host, config.getPort());
+    }
+
+    /**
+     * Removes a broker from the client.
+     *
+     * @param host the broker host
+     * @param port the broker port
+     * @return this NettyClient for method chaining
+     */
+    public NettyClient removeConnection(String host, int port) {
+        InetSocketAddress address = new InetSocketAddress(host, port);
         synchronized (brokerAddresses) {
-            if (!brokerAddresses.contains(address)) {
-                brokerAddresses.add(address);
-                log.debug("Added broker: {}", address);
+            brokerAddresses.remove(address);
+        }
+
+        Channel channel = brokerChannels.remove(address);
+        if (channel != null) {
+            if (channel.isActive()) {
+                 try {
+                    // Send DISCONNECT message
+                     TransportMessage disconnectMsg = TransportMessage.newBuilder()
+                             .setType(MessageType.DISCONNECT)
+                             .setSeq(0)
+                             .setTimestamp(System.currentTimeMillis())
+                             .build();
+                     channel.writeAndFlush(disconnectMsg).addListener(ChannelFutureListener.CLOSE);
+                 } catch (Exception e) {
+                     channel.close();
+                 }
+            } else {
+                channel.close();
             }
         }
+        log.debug("Removed broker: {}", address);
         return this;
     }
 

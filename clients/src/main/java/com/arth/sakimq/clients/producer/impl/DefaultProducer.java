@@ -75,11 +75,22 @@ public class DefaultProducer implements Producer, AutoCloseable {
     }
 
     @Override
+    public Producer removeBroker(String host, int port) {
+        client.removeConnection(host, port);
+        return this;
+    }
+
+    @Override
+    public void send(String topic, byte[] messageContent) throws Exception {
+        send(List.of(topic), Map.of(), ByteString.copyFrom(messageContent));
+    }
+
+    @Override
     public void send(List<String> topics, Map<String, String> headers, ByteString body) {
         long messageId = seq.incrementAndGet();
         saveSeq(messageId);
 
-        Message message = Message.newBuilder()
+        Message message = Message.newBuilder() // This refers to the Protobuf Message class
                 .setMessageId(messageId)
                 .putAllHeaders(headers)
                 .setBody(body)
