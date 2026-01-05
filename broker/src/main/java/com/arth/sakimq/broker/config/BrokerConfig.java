@@ -16,7 +16,7 @@ public class BrokerConfig {
     private static final String DEFAULT_CONFIG_FILE = "config/broker.yml";
 
     private static final long DEFAULT_HEARTBEAT_TIMEOUT_MS = 60000;
-    private static final int DEFAULT_ACK_MAX_RETRIES = 2;  // equals 3 attempts total
+    private static final int DEFAULT_ACK_MAX_RETRIES = 2;
     private static final long DEFAULT_ACK_RETRY_DELAY_MS = 100;
     private static final boolean DEFAULT_MESSAGE_LOG_ENABLED = false;
     private static final long DEFAULT_MESSAGE_LOG_MAX_BYTES = 10 * 1024 * 1024;

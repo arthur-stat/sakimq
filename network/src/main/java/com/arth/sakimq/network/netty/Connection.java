@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Connection wrapper that holds channel state and sequencing info.
  */
 public class Connection {
+
     private final Channel channel;
     private final String clientId;
     private final long connectTime;

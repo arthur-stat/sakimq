@@ -8,7 +8,6 @@ import com.arth.sakimq.broker.store.OffsetManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.netty.NettyServer;
-import com.arth.sakimq.protocol.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

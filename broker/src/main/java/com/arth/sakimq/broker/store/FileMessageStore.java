@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import java.util.function.BiConsumer;
 
 public class FileMessageStore implements MessageStore {
+
     private static final Logger log = LoggerFactory.getLogger(FileMessageStore.class);
     private final Path storeFile;
     private FileOutputStream fileOutputStream;

@@ -140,4 +140,60 @@ topic.beta/
 
 topic.beta/	
 
-index2	payload-2 Ï“üá¸3*Producer-AB0	
+index2	payload-2 Ï“üá¸3*Producer-AB0	=
+topic.alpha.
+
+index0	payload-0  ïÜå¸3*
+Producer-A0=
+topic.alpha.
+
+index1	payload-1 öïÜå¸3*
+Producer-A0=
+topic.alpha.
+
+index2	payload-2 úïÜå¸3*
+Producer-A0<
+
+topic.beta.
+
+index0	payload-0 ıïÜå¸3*
+Producer-B0<
+
+topic.beta.
+
+index1	payload-1 ğÜå¸3*
+Producer-B0<
+
+topic.beta.
+
+index2	payload-2 ‡ğÜå¸3*
+Producer-B0J
+topic.alpha
+
+topic.beta/
+
+
+index0	payload-0 ŠğÜå¸3*Producer-AB0
+J
+topic.alpha
+
+topic.beta/
+
+index1	payload-1 ŒğÜå¸3*Producer-AB0J
+topic.alpha
+
+topic.beta/
+
+index2	payload-2 ğÜå¸3*Producer-AB0=
+topic.alpha.
+
+index0	payload-0 ÷ˆŞå¸3*
+Producer-A0=
+topic.alpha.
+
+index1	payload-1 ½‰Şå¸3*
+Producer-A0=
+topic.alpha.
+
+index2	payload-2 ¿‰Şå¸3*
+Producer-A0

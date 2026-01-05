@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Connection manager that tracks all active connections.
  */
 public class ConnectionManager {
+
     private static final ConnectionManager INSTANCE = new ConnectionManager();
     private final ConcurrentMap<Channel, Connection> channelToConnection = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Connection> clientIdToConnection = new ConcurrentHashMap<>();
