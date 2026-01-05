@@ -1,9 +1,9 @@
 package com.arth.sakimq.broker.core;
 
-import com.arth.sakimq.broker.topic.TopicsManager;
-import com.arth.sakimq.network.netty.NettyServer;
 import com.arth.sakimq.broker.store.MessageStore;
 import com.arth.sakimq.broker.store.OffsetManager;
+import com.arth.sakimq.broker.topic.TopicsManager;
+import com.arth.sakimq.network.netty.NettyServer;
 
 public interface Broker {
     void start() throws Exception;

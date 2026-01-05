@@ -5,8 +5,6 @@ import com.arth.sakimq.broker.queue.DisruptorQueue;
 import com.arth.sakimq.broker.queue.PullQueue;
 import com.arth.sakimq.protocol.MessagePack;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Topic {

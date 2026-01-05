@@ -1,5 +1,6 @@
 package com.arth.sakimq.broker.store;
 
+import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.protocol.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +13,7 @@ import java.util.function.BiConsumer;
 
 public class FileMessageStore implements MessageStore {
 
-    private static final Logger log = LoggerFactory.getLogger(FileMessageStore.class);
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.LOGGING);
     private final Path storeFile;
     private FileOutputStream fileOutputStream;
     private BufferedOutputStream outputStream;

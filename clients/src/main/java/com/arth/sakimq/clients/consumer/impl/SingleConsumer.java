@@ -2,6 +2,7 @@ package com.arth.sakimq.clients.consumer.impl;
 
 import com.arth.sakimq.clients.config.ConsumerConfig;
 import com.arth.sakimq.clients.consumer.ConsumerGroup;
+import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
@@ -26,7 +27,7 @@ import java.util.function.Consumer;
 
 public class SingleConsumer implements ConsumerGroup, AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(SingleConsumer.class);
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.CONSUMER);
     private final String name;
     private final NettyClient client;
     private final ConsumerConfig config;

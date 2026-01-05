@@ -2,6 +2,7 @@ package com.arth.sakimq.clients.producer.impl;
 
 import com.arth.sakimq.clients.config.ProducerConfig;
 import com.arth.sakimq.clients.producer.Producer;
+import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.config.NettyConfig;
 import com.arth.sakimq.network.handler.ClientProtocolHandler;
@@ -13,28 +14,31 @@ import com.arth.sakimq.protocol.MessagePack;
 import com.arth.sakimq.protocol.MessageType;
 import com.arth.sakimq.protocol.TransportMessage;
 import com.google.protobuf.ByteString;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class DefaultProducer implements Producer, AutoCloseable {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultProducer.class);
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.PRODUCER);
     private final String name;
     private final NettyClient client;
     private final ProducerConfig config;
     private final AtomicLong seq;
     private final ConcurrentMap<Long, CompletableFuture<Void>> pendingAcks = new ConcurrentHashMap<>();
-    private final java.nio.file.Path seqFile;
+    private final Path seqFile;
+    private final CompletableFuture<Void> connectionReadyFuture = new CompletableFuture<>();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     public DefaultProducer() {
         this("Producer-" + UUID.randomUUID());
@@ -48,14 +52,14 @@ public class DefaultProducer implements Producer, AutoCloseable {
         this.name = name;
         this.client = new NettyClient(new DefaultProducerHandler(), nettyConfig);
         this.config = producerConfig;
-        this.seqFile = java.nio.file.Paths.get(System.getProperty("user.home"), ".sakimq", "producer", name, "seq");
+        this.seqFile = Paths.get(System.getProperty("user.home"), ".sakimq", "producer", name, "seq");
         this.seq = new AtomicLong(loadSeq());
     }
 
     private long loadSeq() {
         try {
-            if (java.nio.file.Files.exists(seqFile)) {
-                String s = java.nio.file.Files.readString(seqFile).trim();
+            if (Files.exists(seqFile)) {
+                String s = Files.readString(seqFile).trim();
                 return Long.parseLong(s);
             }
         } catch (Exception e) {
@@ -66,8 +70,8 @@ public class DefaultProducer implements Producer, AutoCloseable {
 
     private void saveSeq(long s) {
         try {
-            java.nio.file.Files.createDirectories(seqFile.getParent());
-            java.nio.file.Files.writeString(seqFile, String.valueOf(s));
+            Files.createDirectories(seqFile.getParent());
+            Files.writeString(seqFile, String.valueOf(s));
         } catch (Exception e) {
             log.warn("Failed to save sequence number for producer {}: {}", name, e.getMessage());
         }
@@ -130,7 +134,17 @@ public class DefaultProducer implements Producer, AutoCloseable {
                     pendingAcks.remove(deliveryTag);
                     if (remainingAttempts > 1) {
                         log.warn("Send failed, retrying (remaining {}): {}", remainingAttempts - 1, e.getMessage());
-                        return attemptSend(msg, remainingAttempts - 1);
+                        CompletableFuture<Void> retryFuture = new CompletableFuture<>();
+                        scheduler.schedule(() -> {
+                            attemptSend(msg, remainingAttempts - 1).whenComplete((res, ex) -> {
+                                if (ex != null) {
+                                    retryFuture.completeExceptionally(ex);
+                                } else {
+                                    retryFuture.complete(res);
+                                }
+                            });
+                        }, 100, TimeUnit.MILLISECONDS);
+                        return retryFuture;
                     } else {
                         throw new UnavailableChannelException("Failed to send message after " + config.getMaxRetries() + " attempts", e);
                     }
@@ -140,10 +154,17 @@ public class DefaultProducer implements Producer, AutoCloseable {
     @Override
     public void start() throws Exception {
         client.start();
+        try {
+            connectionReadyFuture.get(config.getTimeout(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            log.error("Failed to start producer (connect timeout): {}", e.getMessage());
+            throw e;
+        }
     }
 
     @Override
     public void shutdown() throws Exception {
+        scheduler.shutdown();
         client.shutdown();
     }
 
@@ -207,11 +228,18 @@ public class DefaultProducer implements Producer, AutoCloseable {
                             .setPassword("")
                             .build())
                     .build();
-            client.send(connectMsg).thenAccept(v -> {
-                log.info("CONNECT message sent successfully");
-            }).exceptionally(ex -> {
-                log.error("Failed to send CONNECT message: {}", ex.getMessage());
-                return null;
+
+            pendingAcks.put(0L, connectionReadyFuture);
+
+            // Use ctx directly to avoid race condition where channel is not yet in NettyClient's active list
+            ctx.channel().writeAndFlush(connectMsg).addListener((ChannelFutureListener) future -> {
+                if (future.isSuccess()) {
+                    log.info("CONNECT message sent successfully");
+                } else {
+                    log.error("Failed to send CONNECT message: {}", future.cause().getMessage());
+                    pendingAcks.remove(0L);
+                    connectionReadyFuture.completeExceptionally(future.cause());
+                }
             });
         }
 

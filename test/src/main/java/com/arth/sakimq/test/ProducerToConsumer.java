@@ -6,7 +6,6 @@ import com.arth.sakimq.clients.consumer.impl.SingleConsumer;
 import com.arth.sakimq.clients.producer.Producer;
 import com.arth.sakimq.clients.producer.impl.DefaultProducer;
 import com.google.protobuf.ByteString;
-import java.util.concurrent.CompletableFuture;
 
 import java.util.ArrayList;
 import java.util.List;

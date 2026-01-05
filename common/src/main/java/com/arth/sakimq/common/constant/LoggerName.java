@@ -10,4 +10,5 @@ public class LoggerName {
     public static final String BROKER = "SakimqBroker";
     public static final String CONSUMER = "SakimqConsumer";
     public static final String TOPIC = "SakimqTopic";
+    public static final String LOGGING = "SakimqLogging";
 }

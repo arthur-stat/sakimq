@@ -3,6 +3,8 @@ package com.arth.sakimq.common.utils;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,8 +29,8 @@ public class YamlParser {
     private static void parseYamlInternal(String filePath, Map<String, String> configMap) throws IOException {
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
             String line;
-            java.util.Deque<String> keyStack = new java.util.ArrayDeque<>();
-            java.util.Deque<Integer> indentStack = new java.util.ArrayDeque<>();
+            Deque<String> keyStack = new ArrayDeque<>();
+            Deque<Integer> indentStack = new ArrayDeque<>();
             indentStack.push(-1);
 
             while ((line = reader.readLine()) != null) {

@@ -1,5 +1,6 @@
 package com.arth.sakimq.broker.store;
 
+import com.arth.sakimq.common.constant.LoggerName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,7 +15,8 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class OffsetManager {
-    private static final Logger log = LoggerFactory.getLogger(OffsetManager.class);
+
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER);
     private final Path offsetFile;
     private final Map<String, Long> offsets = new ConcurrentHashMap<>();
     private final Properties properties = new Properties();

@@ -7,17 +7,17 @@ import com.arth.sakimq.broker.store.FileMessageStore;
 import com.arth.sakimq.broker.store.MessageStore;
 import com.arth.sakimq.broker.store.OffsetManager;
 import com.arth.sakimq.broker.topic.TopicsManager;
+import com.arth.sakimq.common.constant.LoggerName;
 import com.arth.sakimq.common.exception.UnavailableChannelException;
 import com.arth.sakimq.network.netty.NettyServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 public class DefaultBroker implements Broker {
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(LoggerName.BROKER);
 
     private final int port;
     private final String name;

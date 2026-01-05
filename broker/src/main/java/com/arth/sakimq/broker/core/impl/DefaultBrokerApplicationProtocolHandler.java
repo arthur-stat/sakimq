@@ -28,6 +28,7 @@ import io.netty.handler.timeout.IdleStateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -584,7 +585,7 @@ public class DefaultBrokerApplicationProtocolHandler extends ChannelInboundHandl
         Connection connection = connectionManager.getConnection(channel);
         String clientId = connection != null ? connection.getClientId() : "unknown";
 
-        if (cause instanceof java.io.IOException) {
+        if (cause instanceof IOException) {
             // Network IO usually means client disconnected
             log.info("Network exception with client {}: {}", clientId, cause.getMessage());
         } else {
