@@ -1,14 +1,10 @@
-# Under construction...
-
-Coming soon!
-
 # SakiMQ
 
 SakiMQ is a lightweight message queue system implemented in Java.
 
-> This is a wheel project. Its purpose is not to create a high-performance, highly-available message queue, but to implement a practically usable MQ within the scope of my current skills.
+> This is a wheel project. Its purpose is not to create a high-performance, highly-available message queue, but to implement a basic MQ.
 
-> Why is this project named SakiMQ? 'cause I stan [Tenma Saki](https://pjsekai.sega.jp/character/unite01/saki/index.html)!
+> Who is Saki? Reference: [Tenma Saki](https://pjsekai.sega.jp/character/unite01/saki/index.html)
 
 # Implementation Details
 
@@ -29,3 +25,5 @@ SakiMQ is a lightweight message queue system implemented in Java.
 - Auto-sharding
 - Consumer group (multiple consumers within one group)
 - Message log content persistence (currently only metadata + body length is logged even when message logging is enabled)
+
+There are still a large number of features that have not been implemented.
